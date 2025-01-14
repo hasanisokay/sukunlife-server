@@ -1,22 +1,25 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import cors from 'cors';
-
-import connectDB from './config/db.js';
-import authRoutes from './routes/authRoutes.js';
-import cartRoutes from './routes/cartRoutes.js';
-import wishlistRoutes from './routes/wishlistRoutes.js';
-
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
+import authRoutes from "./routes/authRoutes.js"
 dotenv.config();
-connectDB();
-
 const app = express();
-app.use(cors());
+const corsOptions = {
+    origin: (origin, callback) => {
+      const allowedOrigins = ["http://localhost:3000", "https://sunnahcurebd.netlify.app",];
+      if (allowedOrigins.includes(origin) || !origin) {
+        callback(null, true); // Allow the origin
+      } else {
+        console.log(`Blocked by CORS: ${origin}`); // Log blocked origin for debugging
+        callback(new Error("Not allowed by CORS"), false); // Reject other origins
+      }
+    },
+    credentials: true, // Allow credentials (cookies, authentication, etc.)
+  };
+  
+  app.use(cors(corsOptions));
 app.use(express.json());
 
-// Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/cart', cartRoutes);
-app.use('/api/wishlist', wishlistRoutes);
+app.use("/api/auth", authRoutes);
 
 export default app;
