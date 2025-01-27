@@ -7,26 +7,16 @@ import jwt from "jsonwebtoken";
 const router = express.Router();
 const db = await dbConnect();
 import cookie from "cookie";
-import dotenv from "dotenv";
 import { ObjectId } from "mongodb";
-dotenv.config();
+import { ACCESS_COOKIE_MAX_AGE, ACCESS_COOKIE_NAME, ACCESS_EXPIRATION, ACCESS_TOKEN_SECRET_KEY, REFRESH_COOKIE_MAX_AGE, REFRESH_COOKIE_NAME, REFRESH_EXPIRATION, REFRESH_SECRET_KEY } from "../constants/names.mjs";
 
 const usersCollection = db.collection("users");
 const otpCollection = db.collection("otps");
 const sessionsCollection = db.collection("sessions");
 
-const ACCESS_TOKEN_SECRET_KEY = process.env.JWT_SECRET;
-const REFRESH_SECRET_KEY = process.env.REFRESH_JWT_SECRET;
-const ACCESS_COOKIE_NAME = "acs_token";
-const REFRESH_COOKIE_NAME = "rfr_token";
-const ACCESS_EXPIRATION = "2h"; // Shorter expiration for access token
-const REFRESH_EXPIRATION = "30d"; // Longer expiration for refresh token
-const ACCESS_COOKIE_MAX_AGE = 2 * 60 * 60 * 1000;  //2 hours
-const REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
 // Login
 router.post("/login", async (req, res) => {
   const { userIdentifier, password } = req.body;
-
   try {
     const user = await usersCollection.findOne({
       $or: [{ email: userIdentifier }, { mobile: userIdentifier }],
@@ -95,8 +85,9 @@ router.post("/login", async (req, res) => {
 // logout
 router.post("/logout", async (req, res) => {
   try {
-    const refreshToken =
-      req.cookies?.REFRESH_COOKIE_NAME || req.body.refreshToken;
+    const cookies = cookie.parse(req.headers?.cookie || "");
+    const rfrToken = cookies?.rfr_token;
+    const refreshToken = rfrToken || req.body.refreshToken;
     if (!refreshToken) {
       return res
         .status(401)
@@ -111,6 +102,7 @@ router.post("/logout", async (req, res) => {
         .json({ message: "Invalid or expired refresh token", status: 403 });
     }
     let sessionId = decoded?.sessionId;
+
     if (!sessionId) {
       return res.status(400).json({ message: "No session found", status: 400 });
     }
@@ -134,6 +126,17 @@ router.post("/logout", async (req, res) => {
     return res.status(200).json({ message: "Logout successful", status: 200 });
   } catch (error) {
     console.error(error);
+    res.clearCookie(ACCESS_COOKIE_NAME, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
+
+    res.clearCookie(REFRESH_COOKIE_NAME, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
     return res
       .status(500)
       .json({ message: "Server error", error, status: 500 });
@@ -259,7 +262,7 @@ router.post("/reset-password", async (req, res) => {
 router.post("/refresh", async (req, res) => {
   try {
     const cookies = cookie.parse(req.headers?.cookie || "");
-    const rfrToken = cookies.rfr_token;
+    const rfrToken = cookies?.rfr_token;
     // const accessToken = cookies.acs_token;
     // if (accessToken) {
     //   return res.status(200).json({
