@@ -23,33 +23,13 @@ router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
       message: isAvailable ? "Url is taken." : "Url is available.",
       isAvailable: isAvailable ? false : true,
     });
-  } catch {
+  } catch (error) {
     return res
       .status(500)
-      .json({ message: "Server error", error, status: 500 });
+      .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
-router.get("/all-blog-tags", lowAdminMiddleware, async (req, res) => {
-  try {
-    const categories = await blogsCollection.distinct("blogTags");
-    if (categories.length < 1) {
-      return res.status(404).json({
-        message: "No blog tag found.",
-      });
-    }
 
-    return res.json({
-      message: "Blog tags fetched successfully.",
-      categories,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: "Server error",
-      error,
-      status: 500,
-    });
-  }
-});
 router.post("/add-new-blog", strictAdminMiddleware, async (req, res) => {
   try {
     const data = req.body;
@@ -66,7 +46,7 @@ router.post("/add-new-blog", strictAdminMiddleware, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Server error",
-      error,
+      error: error.message,
       status: 500,
     });
   }
@@ -101,147 +81,244 @@ router.put("/update-a-blog/:id", strictAdminMiddleware, async (req, res) => {
     // console.error(error)
     return res.status(500).json({
       message: "Server error",
-      error,
+      error: error.message,
       status: 500,
     });
   }
 });
 
 router.get("/blogs", lowAdminMiddleware, async (req, res) => {
-  const query = req.query;
-  const limit = parseInt(query.limit) || 1000000;
-  const page = query.page || 1;
-  const keyword = query.keyword || "";
-  const tags = query.tags;
-  const matchStage = {};
+  try {
+    const query = req.query;
+    const limit = parseInt(query.limit) || 1000000;
+    const page = query.page || 1;
+    const keyword = query.keyword || "";
+    const tags = query.tags;
+    const matchStage = {};
 
-  const sort = query.sort || "newest";
-  const sortOrder = sort === "newest" ? -1 : 1;
-  const skip = (page - 1) * limit;
+    const sort = query.sort || "newest";
+    const sortOrder = sort === "newest" ? -1 : 1;
+    const skip = (page - 1) * limit;
 
-  if (tags) {
-    matchStage.tags = { $in: [tags] };
-  }
+    if (tags) {
+      matchStage.tags = { $in: [tags] };
+    }
 
-  if (keyword) {
-    matchStage.$or = [
-      { title: { $regex: keyword, $options: "i" } },
-      { content: { $regex: keyword, $options: "i" } },
-      { blogUrl: { $regex: keyword, $options: "i" } },
-      { seoDescription: { $regex: keyword, $options: "i" } },
-    ];
-  }
+    if (keyword) {
+      matchStage.$or = [
+        { title: { $regex: keyword, $options: "i" } },
+        { content: { $regex: keyword, $options: "i" } },
+        { blogUrl: { $regex: keyword, $options: "i" } },
+        { seoDescription: { $regex: keyword, $options: "i" } },
+      ];
+    }
 
-  const blogs = await blogsCollection
-    .find(matchStage)
-    .project({
-      _id: 1,
-      title: 1,
-      date: 1,
-      blogUrl: 1,
-      authorName: 1,
-      postStatus: 1,
-    })
-    .sort({ date: sortOrder })
-    .skip(skip)
-    .limit(limit)
-    .toArray();
+    const blogs = await blogsCollection
+      .find(matchStage)
+      .project({
+        _id: 1,
+        title: 1,
+        date: 1,
+        blogUrl: 1,
+        authorName: 1,
+        postStatus: 1,
+      })
+      .sort({ date: sortOrder })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
 
-  const totalCount = await blogsCollection.countDocuments(matchStage);
-  if (!blogs) {
-    return res.status(404).json({ message: "No blog found", status: 404 });
-  }
-  return res
-    .status(200)
-    .json({ message: "Blogs Found", status: 200, blogs, totalCount });
-});
-router.delete("/blog/:id", strictAdminMiddleware, async (req, res) => {
-  const blogId = req.params.id;
-  const result = await blogsCollection.deleteOne({ _id: new ObjectId(blogId) });
-  if (result.deletedCount > 0) {
+    const totalCount = await blogsCollection.countDocuments(matchStage);
+    if (!blogs) {
+      return res.status(404).json({ message: "No blog found", status: 404 });
+    }
     return res
       .status(200)
-      .json({ message: "Blog deleted.", status: 200, result });
-  } else {
+      .json({ message: "Blogs Found", status: 200, blogs, totalCount });
+  } catch (error) {
     return res
-      .status(404)
-      .json({ message: "Could not delete. Try again", status: 404 });
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+router.delete("/blog/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const blogId = req.params.id;
+    const result = await blogsCollection.deleteOne({
+      _id: new ObjectId(blogId),
+    });
+    if (result.deletedCount > 0) {
+      return res
+        .status(200)
+        .json({ message: "Blog deleted.", status: 200, result });
+    } else {
+      return res
+        .status(404)
+        .json({ message: "Could not delete. Try again", status: 404 });
+    }
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
 
 router.get("/blog/:blogUrl", lowAdminMiddleware, async (req, res) => {
-  const blogUrl = req.params.blogUrl;
-  const matchStage = { blogUrl };
-  const blog = await blogsCollection.findOne(matchStage);
-  if (!blog) {
-    return res.status(404).json({ message: "Blog Not Found", status: 404 });
+  try {
+    const blogUrl = req.params.blogUrl;
+    const matchStage = { blogUrl };
+    const blog = await blogsCollection.findOne(matchStage);
+    if (!blog) {
+      return res.status(404).json({ message: "Blog Not Found", status: 404 });
+    }
+    return res.status(200).json({ message: "Blog Found", status: 200, blog });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
   }
-  return res.status(200).json({ message: "Blog Found", status: 200, blog });
 });
 
 //users
 router.get("/users", lowAdminMiddleware, async (req, res) => {
-  const query = req.query;
-  const limit = parseInt(query.limit) || 1000000;
-  const page = query.page || 1;
-  const keyword = query.keyword || "";
-  const filter = query.filter;
-  const matchStage = {};
+  try {
+    const query = req.query;
+    const limit = parseInt(query.limit) || 1000000;
+    const page = query.page || 1;
+    const keyword = query.keyword || "";
+    const filter = query.filter;
+    const matchStage = {};
 
-  const sort = query.sort || "newest";
-  const sortOrder = sort === "newest" ? -1 : 1;
-  const skip = (page - 1) * limit;
+    const sort = query.sort || "newest";
+    const sortOrder = sort === "newest" ? -1 : 1;
+    const skip = (page - 1) * limit;
 
-  if (keyword) {
-    matchStage.$or = [
-      { name: { $regex: keyword, $options: "i" } },
-      { mobile: { $regex: keyword, $options: "i" } },
-      { email: { $regex: keyword, $options: "i" } },
-    ];
+    if (keyword) {
+      matchStage.$or = [
+        { name: { $regex: keyword, $options: "i" } },
+        { mobile: { $regex: keyword, $options: "i" } },
+        { email: { $regex: keyword, $options: "i" } },
+      ];
+    }
+
+    const users = await usersCollection
+      .find(matchStage)
+      .project({
+        _id: 1,
+        name: 1,
+        mobile: 1,
+        email: 1,
+        photoUrl: 1,
+        role: 1,
+        status: 1,
+        joined: 1,
+      })
+      .sort({ joined: sortOrder })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+    const totalCount = await usersCollection.countDocuments(matchStage);
+    if (!users) {
+      return res.status(404).json({ message: "No user found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Users Found", status: 200, users, totalCount });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
   }
-
-  const users = await usersCollection
-    .find(matchStage)
-    .project({
-      _id: 1,
-      name: 1,
-      mobile: 1,
-      email: 1,
-      photoUrl: 1,
-      role: 1,
-      status: 1,
-      joined: 1,
-    })
-    .sort({ joined: sortOrder })
-    .skip(skip)
-    .limit(limit)
-    .toArray();
-  const totalCount = await usersCollection.countDocuments(matchStage);
-  if (!users) {
-    return res.status(404).json({ message: "No user found", status: 404 });
-  }
-  return res
-    .status(200)
-    .json({ message: "Users Found", status: 200, users, totalCount });
 });
 
-router.post("/add-appointment-dates", strictAdminMiddleware, async (req, res) => {
+router.post(
+  "/add-appointment-dates",
+  strictAdminMiddleware,
+  async (req, res) => {
+    try {
+      const data = req.body;
+      if (!Array.isArray(data)) {
+        return res.status(400).json({
+          message: "Invalid input: expected an array of dates.",
+          status: 400,
+        });
+      }
+
+      const updatedData = data.map((element) => {
+        const date = new Date(element);
+        if (isNaN(date.getTime())) {
+          throw new Error(`Invalid date: ${element}`);
+        }
+        return { date };
+      });
+
+      // Insert the transformed data into the database
+      const result = await scheduleCollection.insertMany(updatedData);
+
+      return res.status(200).json({
+        message: "Appointment dates added successfully.",
+        status: 200,
+        result,
+      });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({
+        message: "Server error",
+        error: error.message,
+        status: 500,
+      });
+    }
+  }
+);
+router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
   try {
-    const data = req.body;
-    const result = await scheduleCollection.insertMany(data);
-    return res.status(200).json({
-      message: "Blog added successfully.",
-      status: 200,
-      result,
+    const dateIds = req?.body?.dateIds;
+
+    // Validate dateIds
+    if (!Array.isArray(dateIds) || dateIds.length === 0) {
+      return res.status(400).json({
+        message: "Invalid or empty dateIds provided.",
+        status: 400,
+      });
+    }
+
+    // Convert dateIds to MongoDB ObjectIds
+    const idsToDelete = dateIds.map((id) => {
+      try {
+        return new ObjectId(id); // Ensure each ID is a valid ObjectId
+      } catch (error) {
+        throw new Error(`Invalid ObjectId: ${id}`);
+      }
     });
+
+    // Delete the schedules
+    const result = await scheduleCollection.deleteMany({
+      _id: { $in: idsToDelete }, // Corrected MongoDB query syntax
+    });
+
+    // Check if any documents were deleted
+    if (result.deletedCount > 0) {
+      return res.status(200).json({
+        message: "Dates deleted successfully.",
+        status: 200,
+        result,
+      });
+    } else {
+      return res.status(404).json({
+        message: "No matching dates found to delete.",
+        status: 404,
+      });
+    }
   } catch (error) {
+    console.error("Error deleting schedules:", error); // Log the error for debugging
     return res.status(500).json({
       message: "Server error",
-      error,
       status: 500,
+      error: error.message, // Include the error message in the response
     });
   }
 });
+
 router.post("/settings", strictAdminMiddleware, (req, res) => {
   // Process admin settings
   res.json({ message: "Settings updated successfully!" });

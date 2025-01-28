@@ -4,6 +4,7 @@ import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
 const router = express.Router();
 const db = await dbConnect();
 const blogsCollection = db.collection("blogs");
+const scheduleCollection = db.collection("schedules");
 
 router.get("/blog/:blogUrl", userCheckerMiddleware, async (req, res) => {
   const blogUrl = req.params.blogUrl;
@@ -23,9 +24,8 @@ router.get("/blogs", userCheckerMiddleware, async (req, res) => {
   let limit = parseInt(query.limit);
   const page = parseInt(query.page);
   const keyword = query.keyword;
-  const tags = query.tags;
+  let tags = query.tags;
   const matchStage = {};
-
   const sort = query.sort;
   const sortOrder = sort === "newest" ? -1 : 1;
 
@@ -33,7 +33,6 @@ router.get("/blogs", userCheckerMiddleware, async (req, res) => {
   if (isNaN(skip)) {
     skip = (page - 1) * limit;
   }
- 
 
   if (skip === 0) {
     limit = page * limit;
@@ -42,9 +41,8 @@ router.get("/blogs", userCheckerMiddleware, async (req, res) => {
     matchStage.postStatus = "public";
   }
   if (tags) {
-    matchStage.tags = { $in: [tags] };
+    matchStage.blogTags = { $in: [tags] };
   }
-
   if (keyword) {
     matchStage.$or = [
       { title: { $regex: keyword, $options: "i" } },
@@ -68,6 +66,51 @@ router.get("/blogs", userCheckerMiddleware, async (req, res) => {
   return res
     .status(200)
     .json({ message: "Blogs Found", status: 200, blogs, totalCount });
+});
+
+router.get("/all-blog-tags", async (req, res) => {
+  try {
+    const tags = await blogsCollection.distinct("blogTags");
+    if (tags.length < 1) {
+      return res.status(404).json({
+        message: "No blog tag found.",
+      });
+    }
+
+    return res.json({
+      message: "Blog tags fetched successfully.",
+      tags,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      error,
+      status: 500,
+    });
+  }
+});
+router.get("/available-appointment-dates", async (req, res) => {
+  try {
+    const dates = await scheduleCollection.find({}).toArray();
+    if (!dates) {
+      return res.status(404).json({
+        message: "No dates available",
+        status: 404,
+      });
+    }
+
+    return res.status(200).json({
+      message: "Dates available.",
+      dates,
+      status: 200,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      error,
+      status: 500,
+    });
+  }
 });
 
 export default router;
