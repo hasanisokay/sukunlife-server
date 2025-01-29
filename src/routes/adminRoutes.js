@@ -237,28 +237,15 @@ router.post(
   async (req, res) => {
     try {
       const data = req.body;
-      if (!Array.isArray(data)) {
-        return res.status(400).json({
-          message: "Invalid input: expected an array of dates.",
-          status: 400,
-        });
-      }
 
-      const updatedData = data.map((element) => {
-        const date = new Date(element);
-        if (isNaN(date.getTime())) {
-          throw new Error(`Invalid date: ${element}`);
-        }
-        return { date };
-      });
-
-      // Insert the transformed data into the database
-      const result = await scheduleCollection.insertMany(updatedData);
+      const result = await scheduleCollection.insertMany(data);
+      const insertedIds = Object.values(result.insertedIds); // Extract the inserted ObjectIds
+      const insertedDocs = await scheduleCollection.find({ _id: { $in: insertedIds } }).toArray();
 
       return res.status(200).json({
         message: "Appointment dates added successfully.",
         status: 200,
-        result,
+        dates: insertedDocs, // Return the newly added documents
       });
     } catch (error) {
       console.error(error);
@@ -270,54 +257,37 @@ router.post(
     }
   }
 );
+
+
 router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
   try {
-    const dateIds = req?.body?.dateIds;
+    const { dateIds, times } = req.body;
 
-    // Validate dateIds
-    if (!Array.isArray(dateIds) || dateIds.length === 0) {
-      return res.status(400).json({
-        message: "Invalid or empty dateIds provided.",
-        status: 400,
-      });
+    if (!Array.isArray(dateIds) || !Array.isArray(times)) {
+      return res.status(400).json({ status: 400, message: "Invalid request data." });
     }
+    const objectIds = dateIds.map(id => new ObjectId(id));
 
-    // Convert dateIds to MongoDB ObjectIds
-    const idsToDelete = dateIds.map((id) => {
-      try {
-        return new ObjectId(id); // Ensure each ID is a valid ObjectId
-      } catch (error) {
-        throw new Error(`Invalid ObjectId: ${id}`);
-      }
+    // Remove selected times from the dates
+    await scheduleCollection.updateMany(
+      { _id: { $in: objectIds } },
+      { $pull: { times: { $in: times } } }
+    );
+
+    // Delete dates that have no times left
+    await scheduleCollection.deleteMany({
+      _id: { $in: objectIds },
+      times: { $size: 0 }
     });
 
-    // Delete the schedules
-    const result = await scheduleCollection.deleteMany({
-      _id: { $in: idsToDelete }, // Corrected MongoDB query syntax
-    });
+    return res.json({ status: 200, message: "Selected dates and times deleted successfully." });
 
-    // Check if any documents were deleted
-    if (result.deletedCount > 0) {
-      return res.status(200).json({
-        message: "Dates deleted successfully.",
-        status: 200,
-        result,
-      });
-    } else {
-      return res.status(404).json({
-        message: "No matching dates found to delete.",
-        status: 404,
-      });
-    }
   } catch (error) {
-    console.error("Error deleting schedules:", error); // Log the error for debugging
-    return res.status(500).json({
-      message: "Server error",
-      status: 500,
-      error: error.message, // Include the error message in the response
-    });
+    console.error("Error deleting schedules:", error);
+    return res.status(500).json({ status: 500, message: "Internal Server Error." });
   }
 });
+
 
 router.post("/settings", strictAdminMiddleware, (req, res) => {
   // Process admin settings
