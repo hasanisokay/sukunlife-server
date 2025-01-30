@@ -288,7 +288,60 @@ router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
   }
 });
 
+router.get("/appointments", strictAdminMiddleware, async (req, res) => {
+  try {
+    const query = req.query;
+    const limit = parseInt(query.limit) || 1000000;
+    const page = query.page || 1;
+    const keyword = query.keyword || "";
+    const tags = query.tags;
+    const matchStage = {};
 
+    const sort = query.sort || "pend";
+    const sortOrder = sort === "newest" ? -1 : 1;
+    const skip = (page - 1) * limit;
+
+    if (tags) {
+      matchStage.tags = { $in: [tags] };
+    }
+
+    if (keyword) {
+      matchStage.$or = [
+        { title: { $regex: keyword, $options: "i" } },
+        { content: { $regex: keyword, $options: "i" } },
+        { blogUrl: { $regex: keyword, $options: "i" } },
+        { seoDescription: { $regex: keyword, $options: "i" } },
+      ];
+    }
+
+    const blogs = await blogsCollection
+      .find(matchStage)
+      .project({
+        _id: 1,
+        title: 1,
+        date: 1,
+        blogUrl: 1,
+        authorName: 1,
+        postStatus: 1,
+      })
+      .sort({ date: sortOrder })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    const totalCount = await blogsCollection.countDocuments(matchStage);
+    if (!blogs) {
+      return res.status(404).json({ message: "No blog found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Blogs Found", status: 200, blogs, totalCount });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
 router.post("/settings", strictAdminMiddleware, (req, res) => {
   // Process admin settings
   res.json({ message: "Settings updated successfully!" });
