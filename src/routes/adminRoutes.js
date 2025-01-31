@@ -300,15 +300,20 @@ router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
 router.get("/appointments", strictAdminMiddleware, async (req, res) => {
   try {
     const query = req.query;
-    const limit = parseInt(query.limit) || 1000000;
+    let limit = parseInt(query.limit) || 1000000;
     const page = query.page || 1;
     const keyword = query.keyword || "";
     const matchStage = {};
     const filter = query.filter || "upcoming";
     const sort = query.sort || "newest";
     const sortOrder = sort === "newest" ? -1 : 1;
-    const skip = (page - 1) * limit;
-
+    let skip = parseInt(query?.skip);
+    if (isNaN(skip)) {
+      skip = (page - 1) * limit;
+    }
+    if (skip === 0) {
+      limit = page * limit;
+    }
     if (filter === "upcoming") {
       matchStage.bookedDate = { $gte: new Date() };
     }
