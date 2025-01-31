@@ -8,6 +8,7 @@ const db = await dbConnect();
 const blogsCollection = db.collection("blogs");
 const usersCollection = db.collection("users");
 const scheduleCollection = db.collection("schedules");
+const appointmentCollection = db.collection("appointments");
 
 router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
   try {
@@ -107,6 +108,7 @@ router.get("/blogs", lowAdminMiddleware, async (req, res) => {
     if (keyword) {
       matchStage.$or = [
         { title: { $regex: keyword, $options: "i" } },
+        { authorName: { $regex: keyword, $options: "i" } },
         { content: { $regex: keyword, $options: "i" } },
         { blogUrl: { $regex: keyword, $options: "i" } },
         { seoDescription: { $regex: keyword, $options: "i" } },
@@ -240,7 +242,9 @@ router.post(
 
       const result = await scheduleCollection.insertMany(data);
       const insertedIds = Object.values(result.insertedIds); // Extract the inserted ObjectIds
-      const insertedDocs = await scheduleCollection.find({ _id: { $in: insertedIds } }).toArray();
+      const insertedDocs = await scheduleCollection
+        .find({ _id: { $in: insertedIds } })
+        .toArray();
 
       return res.status(200).json({
         message: "Appointment dates added successfully.",
@@ -258,15 +262,16 @@ router.post(
   }
 );
 
-
 router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
   try {
     const { dateIds, times } = req.body;
 
     if (!Array.isArray(dateIds) || !Array.isArray(times)) {
-      return res.status(400).json({ status: 400, message: "Invalid request data." });
+      return res
+        .status(400)
+        .json({ status: 400, message: "Invalid request data." });
     }
-    const objectIds = dateIds.map(id => new ObjectId(id));
+    const objectIds = dateIds.map((id) => new ObjectId(id));
 
     // Remove selected times from the dates
     await scheduleCollection.updateMany(
@@ -277,14 +282,18 @@ router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
     // Delete dates that have no times left
     await scheduleCollection.deleteMany({
       _id: { $in: objectIds },
-      times: { $size: 0 }
+      times: { $size: 0 },
     });
 
-    return res.json({ status: 200, message: "Selected dates and times deleted successfully." });
-
+    return res.json({
+      status: 200,
+      message: "Selected dates and times deleted successfully.",
+    });
   } catch (error) {
     console.error("Error deleting schedules:", error);
-    return res.status(500).json({ status: 500, message: "Internal Server Error." });
+    return res
+      .status(500)
+      .json({ status: 500, message: "Internal Server Error." });
   }
 });
 
@@ -294,54 +303,86 @@ router.get("/appointments", strictAdminMiddleware, async (req, res) => {
     const limit = parseInt(query.limit) || 1000000;
     const page = query.page || 1;
     const keyword = query.keyword || "";
-    const tags = query.tags;
     const matchStage = {};
-
-    const sort = query.sort || "pend";
+    const filter = query.filter || "upcoming";
+    const sort = query.sort || "newest";
     const sortOrder = sort === "newest" ? -1 : 1;
     const skip = (page - 1) * limit;
 
-    if (tags) {
-      matchStage.tags = { $in: [tags] };
+    if (filter === "upcoming") {
+      matchStage.bookedDate = { $gte: new Date() };
     }
-
+    if (filter === "with_advance_payment") {
+      matchStage.advancePayment = true;
+    }
+    if (filter === "without_advance_payment") {
+      matchStage.advancePayment = false;
+    }
+    if (filter === "finished") {
+      matchStage.bookedDate = { $lte: new Date() };
+    }
     if (keyword) {
       matchStage.$or = [
-        { title: { $regex: keyword, $options: "i" } },
-        { content: { $regex: keyword, $options: "i" } },
-        { blogUrl: { $regex: keyword, $options: "i" } },
-        { seoDescription: { $regex: keyword, $options: "i" } },
+        { name: { $regex: keyword, $options: "i" } },
+        { mobile: { $regex: keyword, $options: "i" } },
+        { problem: { $regex: keyword, $options: "i" } },
+        { transactionNumber: { $regex: keyword, $options: "i" } },
       ];
     }
 
-    const blogs = await blogsCollection
+    const appointments = await appointmentCollection
       .find(matchStage)
-      .project({
-        _id: 1,
-        title: 1,
-        date: 1,
-        blogUrl: 1,
-        authorName: 1,
-        postStatus: 1,
-      })
-      .sort({ date: sortOrder })
+      .sort({ bookedDate: sortOrder })
       .skip(skip)
       .limit(limit)
       .toArray();
 
-    const totalCount = await blogsCollection.countDocuments(matchStage);
-    if (!blogs) {
-      return res.status(404).json({ message: "No blog found", status: 404 });
+    const totalCount = await appointmentCollection.countDocuments(matchStage);
+    if (!appointments) {
+      return res
+        .status(404)
+        .json({ message: "No apppointment found", status: 404 });
     }
-    return res
-      .status(200)
-      .json({ message: "Blogs Found", status: 200, blogs, totalCount });
+    return res.status(200).json({
+      message: "Appointments found",
+      status: 200,
+      appointments,
+      totalCount,
+    });
   } catch (error) {
     return res
       .status(500)
       .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
+
+router.delete("/appointments", strictAdminMiddleware, async (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ message: "Invalid or empty IDs array" });
+  }
+  const idsWithObjectId = ids.map((i) => new ObjectId(i));
+  try {
+    const result = await appointmentCollection.deleteMany({
+      _id: { $in: idsWithObjectId },
+    });
+    if (result.deletedCount > 0) {
+      return res
+        .status(200)
+        .json({ message: "Appointments deleted successfully", status: 200 });
+    } else {
+      return res
+        .status(404)
+        .json({ message: "No appointments found to delete", status: 404 });
+    }
+  } catch (error) {
+    console.error("Error deleting appointments:", error);
+    return res
+      .status(500)
+      .json({ message: "Internal server error", status: 500 });
+  }
+});
+
 router.post("/settings", strictAdminMiddleware, (req, res) => {
   // Process admin settings
   res.json({ message: "Settings updated successfully!" });

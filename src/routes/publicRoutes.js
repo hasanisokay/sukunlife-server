@@ -152,6 +152,8 @@ router.post("/book-appointment", async (req, res) => {
     }    
     const modifiedBookingData = bookingData;
     modifiedBookingData.bookedDate = convertDateToDateObject(bookingData.date)
+    modifiedBookingData.bookingDate = new Date();
+    
     const result = await appointmentCollection.insertOne(modifiedBookingData);
     if (result.insertedId) {
       await scheduleCollection.updateMany(

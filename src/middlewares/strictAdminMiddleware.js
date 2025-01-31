@@ -12,7 +12,7 @@ const strictAdminMiddleware = async (req, res, next) => {
   try {
     const cookies = cookie.parse(req.headers?.cookie || "");
     const accessToken = cookies.acs_token || req?.headers?.authorization?.split(' ')[1];
-    const refreshToken = cookies.rfr_token;
+    const refreshToken = cookies.rfr_token || req?.headers?.['x-refresh-token'];
     if (!accessToken || !refreshToken) {
       return res
         .status(401)
