@@ -3,6 +3,8 @@ import lowAdminMiddleware from "../middlewares/lowAdminMiddleware.js";
 import strictAdminMiddleware from "../middlewares/strictAdminMiddleware.js";
 import dbConnect from "../config/db.mjs";
 import { ObjectId } from "mongodb";
+import convertToDhakaTime from "../utils/convertToDhakaTime.mjs";
+
 const router = express.Router();
 const db = await dbConnect();
 const blogsCollection = db.collection("blogs");
@@ -396,9 +398,8 @@ router.delete("/appointments", strictAdminMiddleware, async (req, res) => {
 router.post("/add-new-course", strictAdminMiddleware, async (req, res) => {
   try {
     const data = req.body;
-    if (!data.addedOn) {
-      data.addedOn = new Date();
-    }
+
+    data.addedOn = convertToDhakaTime(data.addedOn);
     const result = await courseCollection.insertOne(data);
 
     return res.status(200).json({
@@ -510,7 +511,7 @@ router.get("/courses", strictAdminMiddleware, async (req, res) => {
 router.delete("/course/:id", strictAdminMiddleware, async (req, res) => {
   try {
     const courseId = req.params.id;
-    const result = await courseCollection.deleteOne({courseId});
+    const result = await courseCollection.deleteOne({ courseId });
     if (result.deletedCount > 0) {
       return res
         .status(200)
@@ -519,6 +520,34 @@ router.delete("/course/:id", strictAdminMiddleware, async (req, res) => {
       return res
         .status(404)
         .json({ message: "Could not delete. Try again", status: 404 });
+    }
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+router.put("/course/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const updateData = req.body;
+    const { _id, ...dataWithoutId } = updateData;
+    dataWithoutId.updatedOn = convertToDhakaTime(dataWithoutId.updatedOn);
+    dataWithoutId.addedOn = convertToDhakaTime(dataWithoutId.addedOn);
+
+    const result = await courseCollection.updateOne(
+      { _id: new ObjectId(courseId) },
+      { $set: dataWithoutId }
+    );
+
+    if (result?.matchedCount > 0) {
+      return res
+        .status(200)
+        .json({ message: "Course updated successfully.", status: 200, result });
+    } else {
+      return res
+        .status(404)
+        .json({ message: "Course not found.", status: 404 });
     }
   } catch (error) {
     return res
