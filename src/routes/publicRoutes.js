@@ -11,7 +11,7 @@ dotenv.config();
 const blogsCollection = db.collection("blogs");
 const scheduleCollection = db.collection("schedules");
 const appointmentCollection = db.collection("appointments");
-
+const courseCollection = db.collection("courses");
 router.get("/blog/:blogUrl", userCheckerMiddleware, async (req, res) => {
   try {
     const blogUrl = req.params.blogUrl;

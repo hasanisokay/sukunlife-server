@@ -9,6 +9,7 @@ const blogsCollection = db.collection("blogs");
 const usersCollection = db.collection("users");
 const scheduleCollection = db.collection("schedules");
 const appointmentCollection = db.collection("appointments");
+const courseCollection = db.collection("courses");
 
 router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
   try {
@@ -19,7 +20,10 @@ router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
         .status(400)
         .json({ message: "Url must be at least 1 character long." });
     }
-    const isAvailable = await blogsCollection.findOne({ blogUrl: url });
+    const isAvailable = await scheduleCollection.findOne(
+      { blogUrl: url },
+      { projection: { _id: 1 } }
+    );
     return res.json({
       message: isAvailable ? "Url is taken." : "Url is available.",
       isAvailable: isAvailable ? false : true,
@@ -385,6 +389,141 @@ router.delete("/appointments", strictAdminMiddleware, async (req, res) => {
     return res
       .status(500)
       .json({ message: "Internal server error", status: 500 });
+  }
+});
+
+// courses
+router.post("/add-new-course", strictAdminMiddleware, async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data.addedOn) {
+      data.addedOn = new Date();
+    }
+    const result = await courseCollection.insertOne(data);
+
+    return res.status(200).json({
+      message: "Course added successfully.",
+      status: 200,
+      result,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+      status: 500,
+    });
+  }
+});
+
+router.get("/check-course-id", lowAdminMiddleware, async (req, res) => {
+  try {
+    const query = req.query;
+    const id = query?.id;
+    if (id < 1) {
+      return res
+        .status(400)
+        .json({ message: "Id must be at least 1 character long." });
+    }
+    const isAvailable = await courseCollection.findOne(
+      { courseId: id },
+      { projection: { _id: 1 } }
+    );
+
+    return res.json({
+      message: isAvailable ? "Id is taken." : "Id is available.",
+      isAvailable: isAvailable ? false : true,
+    });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+
+router.get("/course/:courseId", strictAdminMiddleware, async (req, res) => {
+  try {
+    const courseId = req.params.courseId;
+    const matchStage = { courseId };
+    const course = await courseCollection.findOne(matchStage);
+    if (!course) {
+      return res.status(404).json({ message: "Course Not Found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Course Found", status: 200, course });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+router.get("/courses", strictAdminMiddleware, async (req, res) => {
+  try {
+    const query = req.query;
+    const limit = parseInt(query.limit) || 1000000;
+    const page = query.page || 1;
+    const keyword = query.keyword || "";
+    const sort = query.sort || "newest";
+    const sortOrder = sort === "newest" ? -1 : 1;
+    const skip = (page - 1) * limit;
+
+    const matchStage = {};
+
+    if (keyword) {
+      matchStage.$or = [
+        { title: { $regex: keyword, $options: "i" } },
+        { instructor: { $regex: keyword, $options: "i" } },
+        { courseId: { $regex: keyword, $options: "i" } },
+        { description: { $regex: keyword, $options: "i" } },
+        { seoDesctioption: { $regex: keyword, $options: "i" } },
+        { seoTags: { $regex: keyword, $options: "i" } },
+      ];
+    }
+    const courses = await courseCollection
+      .find(matchStage)
+      .project({
+        _id: 1,
+        title: 1,
+        courseId: 1,
+        description: 1,
+        instructor: 1,
+        addedOn: 1,
+        coverPhotoUrl: 1,
+      })
+      .sort({ addedOn: sortOrder })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+    if (!courses) {
+      return res.status(404).json({ message: "Course Not Found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Course Found", status: 200, courses });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+
+router.delete("/course/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const result = await courseCollection.deleteOne({courseId});
+    if (result.deletedCount > 0) {
+      return res
+        .status(200)
+        .json({ message: "Course deleted.", status: 200, result });
+    } else {
+      return res
+        .status(404)
+        .json({ message: "Could not delete. Try again", status: 404 });
+    }
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
 
