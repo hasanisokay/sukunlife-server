@@ -398,8 +398,8 @@ router.delete("/appointments", strictAdminMiddleware, async (req, res) => {
 router.post("/add-new-course", strictAdminMiddleware, async (req, res) => {
   try {
     const data = req.body;
-
     data.addedOn = convertToDhakaTime(data.addedOn);
+    data.price = parseFloat(data.price);
     const result = await courseCollection.insertOne(data);
 
     return res.status(200).json({
@@ -477,7 +477,7 @@ router.get("/courses", strictAdminMiddleware, async (req, res) => {
         { courseId: { $regex: keyword, $options: "i" } },
         { description: { $regex: keyword, $options: "i" } },
         { seoDesctioption: { $regex: keyword, $options: "i" } },
-        { seoTags: { $regex: keyword, $options: "i" } },
+        { tags: { $regex: keyword, $options: "i" } },
       ];
     }
     const courses = await courseCollection
@@ -531,10 +531,12 @@ router.put("/course/:id", strictAdminMiddleware, async (req, res) => {
   try {
     const courseId = req.params.id;
     const updateData = req.body;
+
     const { _id, ...dataWithoutId } = updateData;
     dataWithoutId.updatedOn = convertToDhakaTime(dataWithoutId.updatedOn);
     dataWithoutId.addedOn = convertToDhakaTime(dataWithoutId.addedOn);
-
+    dataWithoutId.price = parseFloat(dataWithoutId.price);
+    
     const result = await courseCollection.updateOne(
       { _id: new ObjectId(courseId) },
       { $set: dataWithoutId }
