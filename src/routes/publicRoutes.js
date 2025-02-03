@@ -320,8 +320,19 @@ router.get("/course/:id", async (req, res) => {
         courseId: 1,
         learningItems: 1,
         addedOn: 1,
+        updatedOn:1,
         reviews: 1,
-        students: 1,
+        studentsCount: { $size: "$students" },
+        reviewsCount: { $size: "$reviews" },
+        ratingSum: {
+          $cond: {
+            if: { $gt: [{ $size: "$reviews" }, 0] },
+            then: {
+              $sum: "$reviews.rating",
+            },
+            else: 0,
+          },
+        },
         modules: {
           $map: {
             input: "$modules",
@@ -378,7 +389,7 @@ router.get("/courses", async (req, res) => {
     const keyword = query.keyword | "";
     let tags = query.tags || "";
     const matchStage = {};
-    const sort = 'newest';
+    const sort = "newest";
     const sortOrder = sort === "newest" ? -1 : 1;
 
     let skip = parseInt(query?.skip);
