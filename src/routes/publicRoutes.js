@@ -12,6 +12,7 @@ const blogsCollection = db.collection("blogs");
 const scheduleCollection = db.collection("schedules");
 const appointmentCollection = db.collection("appointments");
 const courseCollection = db.collection("courses");
+const shopCollection = db.collection("shop");
 router.get("/blog/:blogUrl", userCheckerMiddleware, async (req, res) => {
   try {
     const blogUrl = req.params.blogUrl;
@@ -319,8 +320,9 @@ router.get("/course/:id", async (req, res) => {
         tags: 1,
         courseId: 1,
         learningItems: 1,
+        coverPhotoUrl: 1,
         addedOn: 1,
-        updatedOn:1,
+        updatedOn: 1,
         reviews: 1,
         studentsCount: { $size: "$students" },
         reviewsCount: { $size: "$reviews" },
@@ -468,4 +470,124 @@ router.get("/courses", async (req, res) => {
   }
 });
 
+// shops
+router.get("/all-shop-item-categories", async (req, res) => {
+  try {
+    const categories = await shopCollection.distinct("category");
+    if (categories.length < 1) {
+      return res.status(404).json({
+        message: "No shop category found.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Shop categories fetched successfully.",
+      categories,
+      status: 200,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
+router.get("/product/:productId", async (req, res) => {
+  try {
+    const productId = req.params.productId;
+    const matchStage = { productId };
+    const product = await shopCollection.findOne(matchStage);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ message: "Product Not Found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Product Found", status: 200, product });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
+router.get("/products", async (req, res) => {
+  try {
+    const query = req.query;
+    let limit = parseInt(query.limit);
+    const page = parseInt(query.page);
+    const keyword = query.keyword;
+    let tags = query.tags;
+    let category = query.category;
+    const matchStage = {};
+    const sort = query.sort;
+    const sortOrder = sort === "newest" ? -1 : 1;
+
+    let skip = parseInt(query?.skip);
+    if (isNaN(skip)) {
+      skip = (page - 1) * limit;
+    }
+
+    if (skip === 0) {
+      limit = page * limit;
+    }
+    if (tags) {
+      matchStage.tags = { $in: [tags] };
+    }
+    if (category) {
+      matchStage.category = { $in: [category] };
+    }
+    if (keyword) {
+      matchStage.$or = [
+        { title: { $regex: keyword, $options: "i" } },
+        { description: { $regex: keyword, $options: "i" } },
+        { material: { $regex: keyword, $options: "i" } },
+        { brand: { $regex: keyword, $options: "i" } },
+      ];
+    }
+
+    const products = await shopCollection
+      .aggregate([
+        { $match: matchStage },
+        { $sort: { addedOn: sortOrder } },
+        { $skip: skip },
+        { $limit: limit },
+        {
+          $project: {
+            title: 1,
+            price: 1,
+            images: 1,
+            productId: 1,
+            reviewsCount: { $size: "$reviews" },
+            ratingSum: {
+              $cond: {
+                if: { $gt: [{ $size: "$reviews" }, 0] },
+                then: {
+                  $sum: "$reviews.rating",
+                },
+                else: 0,
+              },
+            },
+          },
+        },
+      ])
+      .toArray();
+    const totalCount = await shopCollection.countDocuments(matchStage);
+    if (!products) {
+      return res.status(404).json({ message: "No product found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Products Found", status: 200, products, totalCount });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
 export default router;

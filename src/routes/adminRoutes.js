@@ -12,6 +12,7 @@ const usersCollection = db.collection("users");
 const scheduleCollection = db.collection("schedules");
 const appointmentCollection = db.collection("appointments");
 const courseCollection = db.collection("courses");
+const shopCollection = db.collection("shop");
 
 router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
   try {
@@ -22,7 +23,7 @@ router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
         .status(400)
         .json({ message: "Url must be at least 1 character long." });
     }
-    const isAvailable = await scheduleCollection.findOne(
+    const isAvailable = await blogsCollection.findOne(
       { blogUrl: url },
       { projection: { _id: 1 } }
     );
@@ -536,7 +537,7 @@ router.put("/course/:id", strictAdminMiddleware, async (req, res) => {
     dataWithoutId.updatedOn = convertToDhakaTime(dataWithoutId.updatedOn);
     dataWithoutId.addedOn = convertToDhakaTime(dataWithoutId.addedOn);
     dataWithoutId.price = parseFloat(dataWithoutId.price);
-    
+
     const result = await courseCollection.updateOne(
       { _id: new ObjectId(courseId) },
       { $set: dataWithoutId }
@@ -555,6 +556,55 @@ router.put("/course/:id", strictAdminMiddleware, async (req, res) => {
     return res
       .status(500)
       .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+
+// shops
+router.get("/check-product-id", lowAdminMiddleware, async (req, res) => {
+  try {
+    const query = req.query;
+    const id = query?.id;
+    if (id?.length < 1) {
+      return res
+        .status(400)
+        .json({ message: "Product Id must be at least 1 character long." });
+    }
+    const isAvailable = await shopCollection.findOne(
+      { productId: id },
+      { projection: { _id: 1 } }
+    );
+    return res.json({
+      message: isAvailable
+        ? "Product Id is taken."
+        : "Product Id is available.",
+      isAvailable: isAvailable ? false : true,
+    });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+router.post("/add-new-product", strictAdminMiddleware, async (req, res) => {
+  try {
+    const data = req.body;
+    data.addedOn = convertToDhakaTime(data.addedOn);
+    data.price = parseFloat(data.price);
+    data.stockQuantity = parseFloat(data.stockQuantity);
+    data.quantity = parseFloat(data.quantity);
+    const result = await shopCollection.insertOne(data);
+
+    return res.status(200).json({
+      message: "Product added successfully.",
+      status: 200,
+      result,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+      status: 500,
+    });
   }
 });
 
