@@ -560,6 +560,8 @@ router.put("/course/:id", strictAdminMiddleware, async (req, res) => {
 });
 
 // shops
+
+// check product id is available or not.
 router.get("/check-product-id", lowAdminMiddleware, async (req, res) => {
   try {
     const query = req.query;
@@ -585,9 +587,11 @@ router.get("/check-product-id", lowAdminMiddleware, async (req, res) => {
       .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
+// add new product
 router.post("/add-new-product", strictAdminMiddleware, async (req, res) => {
   try {
     const data = req.body;
+    data.reviews = [];
     data.addedOn = convertToDhakaTime(data.addedOn);
     data.price = parseFloat(data.price);
     data.stockQuantity = parseFloat(data.stockQuantity);
@@ -605,6 +609,56 @@ router.post("/add-new-product", strictAdminMiddleware, async (req, res) => {
       error: error.message,
       status: 500,
     });
+  }
+});
+// delete a product
+router.delete("/products/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const result = await shopCollection.deleteOne({ productId });
+    if (result.deletedCount > 0) {
+      return res
+        .status(200)
+        .json({ message: "Product deleted.", status: 200, result });
+    } else {
+      return res
+        .status(404)
+        .json({ message: "Could not delete. Try again", status: 404 });
+    }
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+// update a product
+router.put("/products/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updateData = req.body;
+    const { _id, ...dataWithoutId } = updateData;
+    dataWithoutId.updatedOn = convertToDhakaTime(dataWithoutId.updatedOn);
+    dataWithoutId.addedOn = convertToDhakaTime(dataWithoutId.addedOn);
+    dataWithoutId.price = parseFloat(dataWithoutId.price);
+
+    const result = await shopCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: dataWithoutId }
+    );
+
+    if (result?.matchedCount > 0) {
+      return res
+        .status(200)
+        .json({ message: "Product updated successfully.", status: 200, result });
+    } else {
+      return res
+        .status(404)
+        .json({ message: "Product not found.", status: 404 });
+    }
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
 
