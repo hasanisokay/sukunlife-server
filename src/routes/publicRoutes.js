@@ -4,6 +4,7 @@ import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
 import convertTo12HourFormat from "../utils/convertTo12HourFormat.mjs";
 import dotenv from "dotenv";
 import convertDateToDateObject from "../utils/convertDateToDateObject.mjs";
+import { ObjectId } from "mongodb";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -13,6 +14,8 @@ const scheduleCollection = db.collection("schedules");
 const appointmentCollection = db.collection("appointments");
 const courseCollection = db.collection("courses");
 const shopCollection = db.collection("shop");
+const usersCollection = db.collection("users");
+
 router.get("/blog/:blogUrl", userCheckerMiddleware, async (req, res) => {
   try {
     const blogUrl = req.params.blogUrl;
@@ -471,7 +474,8 @@ router.get("/courses", async (req, res) => {
 });
 
 // shops
-router.get("/all-shop-item-categories", async (req, res) => {
+//get all the product categories
+router.get("/all-product-categories", async (req, res) => {
   try {
     const categories = await shopCollection.distinct("category");
     if (categories.length < 1) {
@@ -493,6 +497,7 @@ router.get("/all-shop-item-categories", async (req, res) => {
     });
   }
 });
+// get a single product details
 router.get("/product/:productId", async (req, res) => {
   try {
     const productId = req.params.productId;
@@ -514,6 +519,7 @@ router.get("/product/:productId", async (req, res) => {
     });
   }
 });
+// get all the products
 router.get("/products", async (req, res) => {
   try {
     const query = req.query;
@@ -525,7 +531,7 @@ router.get("/products", async (req, res) => {
     const matchStage = {};
     const sort = query.sort;
     const sortOrder = sort === "newest" ? -1 : 1;
-
+    console.log(category);
     let skip = parseInt(query?.skip);
     if (isNaN(skip)) {
       skip = (page - 1) * limit;
@@ -535,8 +541,9 @@ router.get("/products", async (req, res) => {
       limit = page * limit;
     }
     if (tags) {
-      matchStage.tags = { $in: [tags] };
+      matchStage.tags = { $regex: tags, $options: "i" };
     }
+
     if (category) {
       matchStage.category = { $in: [category] };
     }
@@ -582,6 +589,59 @@ router.get("/products", async (req, res) => {
     return res
       .status(200)
       .json({ message: "Products Found", status: 200, products, totalCount });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
+
+// save to cart
+router.put("/cart/update", async (req, res) => {
+  try {
+    const { userId, cart } = req.body;
+
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { cart } }
+    );
+    console.log(result);
+    if (result.modifiedCount > 0) {
+      return res.status(200).json({
+        message: "Cart updated successfully.",
+        result,
+        status: 200,
+      });
+    } else {
+      return res.status(400).json({
+        message: "No update made",
+        status: 400,
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
+
+router.get("/cart/:userId", async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const matchStage = { _id: new ObjectId(userId) };
+    const cart = await usersCollection.findOne(matchStage, {
+      projection: { _id: 1, cart: 1 },
+    });
+    if (!cart) {
+      return res
+        .status(404)
+        .json({ message: "User cart not found", status: 404 });
+    }
+    return res.status(200).json({ message: "Cart found", status: 200, cart });
   } catch (error) {
     return res.status(500).json({
       message: "Server error",
