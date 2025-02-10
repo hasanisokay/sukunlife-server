@@ -13,6 +13,7 @@ const scheduleCollection = db.collection("schedules");
 const appointmentCollection = db.collection("appointments");
 const courseCollection = db.collection("courses");
 const shopCollection = db.collection("shop");
+const voucherCollection = db.collection("vouchers");
 
 router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
   try {
@@ -647,9 +648,11 @@ router.put("/products/:id", strictAdminMiddleware, async (req, res) => {
     );
 
     if (result?.matchedCount > 0) {
-      return res
-        .status(200)
-        .json({ message: "Product updated successfully.", status: 200, result });
+      return res.status(200).json({
+        message: "Product updated successfully.",
+        status: 200,
+        result,
+      });
     } else {
       return res
         .status(404)
@@ -659,6 +662,45 @@ router.put("/products/:id", strictAdminMiddleware, async (req, res) => {
     return res
       .status(500)
       .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+
+// vouchers
+
+// get all voucher
+router.get("/vouchers", strictAdminMiddleware, async (req, res) => {
+  try {
+    const vouchers = await voucherCollection.find({}).toArray();
+    if (!vouchers) {
+      return res.status(404).json({ message: "No voucher found.", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Vouchers Found", status: 200, vouchers });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+// add new voucher
+router.post("/new-voucher", strictAdminMiddleware, async (req, res) => {
+  try {
+    const data = req.body;
+    data.expiryDate = convertToDhakaTime(data.expiryDate);
+    const result = await voucherCollection.insertOne(data);
+
+    return res.status(200).json({
+      message: "Voucher added successfully.",
+      status: 200,
+      result,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+      status: 500,
+    });
   }
 });
 

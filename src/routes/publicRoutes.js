@@ -15,6 +15,7 @@ const appointmentCollection = db.collection("appointments");
 const courseCollection = db.collection("courses");
 const shopCollection = db.collection("shop");
 const usersCollection = db.collection("users");
+const voucherCollection = db.collection("vouchers");
 
 router.get("/blog/:blogUrl", userCheckerMiddleware, async (req, res) => {
   try {
@@ -531,7 +532,7 @@ router.get("/products", async (req, res) => {
     const matchStage = {};
     const sort = query.sort;
     const sortOrder = sort === "newest" ? -1 : 1;
-    console.log(category);
+
     let skip = parseInt(query?.skip);
     if (isNaN(skip)) {
       skip = (page - 1) * limit;
@@ -607,7 +608,6 @@ router.put("/cart/update", async (req, res) => {
       { _id: new ObjectId(userId) },
       { $set: { cart } }
     );
-    console.log(result);
     if (result.modifiedCount > 0) {
       return res.status(200).json({
         message: "Cart updated successfully.",
@@ -650,4 +650,92 @@ router.get("/cart/:userId", async (req, res) => {
     });
   }
 });
+
+router.get("/check-voucher", async (req, res) => {
+  try {
+    const query = req.query;
+    const code = query?.code;
+    const totalPrice = parseFloat(query?.totalPrice);
+    if (!code || code.length < 1) {
+      return res
+        .status(400)
+        .json({
+          message: "Voucher code must be at least 1 character long.",
+          isValid: false,
+        });
+    }
+
+    if (isNaN(totalPrice) || totalPrice <= 0) {
+      return res
+        .status(400)
+        .json({
+          message: "Total price must be a valid positive number.",
+          isValid: false,
+          status: 400,
+        });
+    }
+
+    const voucher = await voucherCollection.findOne({ code });
+
+    if (!voucher) {
+      return res
+        .status(404)
+        .json({ message: "Invalid voucher.", isValid: false, status: 404 });
+    }
+
+    if (voucher.expiryDate) {
+      const currentDate = new Date();
+      const expiryDate = new Date(voucher.expiryDate);
+
+      if (currentDate > expiryDate) {
+        return res
+          .status(400)
+          .json({
+            message: "Voucher has expired.",
+            isValid: false,
+            status: 400,
+          });
+      }
+    }
+
+    // Check if the totalPrice meets the minimum order limit
+    if (totalPrice < parseFloat(voucher.minOrderLimit)) {
+      return res.status(400).json({
+        message: `Total price must be at least ${voucher.minOrderLimit} to apply this voucher.`,
+        isValid: false,
+        status: 400,
+      });
+    }
+
+    // Calculate discount based on voucher type
+    let discount = 0;
+    if (voucher.type === "percentage") {
+      discount = (totalPrice * parseFloat(voucher.value)) / 100;
+    } else if (voucher.type === "amount") {
+      discount = parseFloat(voucher.value);
+    }
+
+    // Ensure that the discount doesn't exceed the maxLimit
+    if (voucher.maxLimit && discount > parseFloat(voucher.maxLimit)) {
+      discount = parseFloat(voucher.maxLimit);
+    }
+
+    // Calculate the final price after discount
+    const finalPrice = totalPrice - discount;
+
+    return res.status(200).json({
+      message: "Voucher applied.",
+      voucher,
+      discount,
+      finalPrice,
+      status: 200,
+      isValid: true,
+    });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+
 export default router;
