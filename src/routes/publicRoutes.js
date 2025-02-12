@@ -5,6 +5,9 @@ import convertTo12HourFormat from "../utils/convertTo12HourFormat.mjs";
 import dotenv from "dotenv";
 import convertDateToDateObject from "../utils/convertDateToDateObject.mjs";
 import { ObjectId } from "mongodb";
+import nodemailer from 'nodemailer';
+import sendOrderEmailToAdmin from "../utils/sendOrderEmailToAdmin.mjs";
+import sendOrderEmailToUser from "../utils/sendOrderEmailToUser.mjs";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -16,6 +19,18 @@ const courseCollection = db.collection("courses");
 const shopCollection = db.collection("shop");
 const usersCollection = db.collection("users");
 const voucherCollection = db.collection("vouchers");
+const orderCollection = db.collection("orders");
+
+
+let transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: process.env.EMAIL_SERVICE_HOST,
+  secure: true,
+  auth: {
+    user: process.env.EMAIL_ID,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 router.get("/blog/:blogUrl", userCheckerMiddleware, async (req, res) => {
   try {
@@ -188,15 +203,6 @@ router.post("/book-appointment", async (req, res) => {
 router.post("/sendEmail", async (req, res) => {
   try {
     const bookingData = req.body;
-    let transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_SERVICE_HOST,
-      secure: true,
-      auth: {
-        user: process.env.EMAIL_ID,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
 
     let mailOptions = {
       to: "sukunlifebd@gmail.com",
@@ -732,6 +738,34 @@ router.get("/check-voucher", async (req, res) => {
     return res
       .status(500)
       .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+
+router.post("/place-order", async (req, res) => {
+  try {
+    const data = req.body;
+    data.date = convertDateToDateObject(new Date);
+    data.status = "pending";
+    const result = await orderCollection.insertOne(data);
+
+
+    if (result?.insertedId) {
+      await sendOrderEmailToAdmin(data, transporter);
+      if (data.email) {
+        await sendOrderEmailToUser(data, data?.email, transporter);
+      }
+      return res.status(200).json({
+        message: "Order placed successfully.",
+        result,
+        status: 200,
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
   }
 });
 

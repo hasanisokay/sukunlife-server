@@ -14,6 +14,7 @@ const appointmentCollection = db.collection("appointments");
 const courseCollection = db.collection("courses");
 const shopCollection = db.collection("shop");
 const voucherCollection = db.collection("vouchers");
+const orderCollection = db.collection("orders");
 
 router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
   try {
@@ -672,7 +673,9 @@ router.get("/vouchers", strictAdminMiddleware, async (req, res) => {
   try {
     const vouchers = await voucherCollection.find({}).toArray();
     if (!vouchers) {
-      return res.status(404).json({ message: "No voucher found.", status: 404 });
+      return res
+        .status(404)
+        .json({ message: "No voucher found.", status: 404 });
     }
     return res
       .status(200)
@@ -703,10 +706,174 @@ router.post("/new-voucher", strictAdminMiddleware, async (req, res) => {
     });
   }
 });
+router.delete("/voucher/:code", strictAdminMiddleware, async (req, res) => {
+  try {
+    const code = req.params.code;
+    const result = await voucherCollection.deleteOne({ code });
+    if (result.deletedCount > 0) {
+      return res
+        .status(200)
+        .json({ message: "Voucher deleted.", status: 200, result });
+    } else {
+      return res
+        .status(404)
+        .json({ message: "Could not delete. Try again", status: 404 });
+    }
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
 
-router.post("/settings", strictAdminMiddleware, (req, res) => {
-  // Process admin settings
-  res.json({ message: "Settings updated successfully!" });
+router.get("/orders", strictAdminMiddleware, async (req, res) => {
+  try {
+    const query = req.query;
+    const limit = parseInt(query.limit) || 1000000;
+    const page = query.page || 1;
+    const keyword = query.keyword || "";
+    const filter = query.filter 
+    const matchStage = {};
+    const sort = query.sort || "newest";
+    const sortOrder = sort === "newest" ? -1 : 1;
+    const skip = (page - 1) * limit;
+
+    if (keyword) {
+      matchStage.$or = [
+        { name: { $regex: keyword, $options: "i" } },
+        { phone: { $regex: keyword, $options: "i" } },
+        { email: { $regex: keyword, $options: "i" } },
+        { address: { $regex: keyword, $options: "i" } },
+        { transactionId: { $regex: keyword, $options: "i" } },
+        { "cartItems.title": { $regex: keyword, $options: "i" } },
+      ];
+    }
+    if (filter === "pending_only") {
+      matchStage.status = "pending";
+    } else if (filter === "approved_only") {
+      matchStage.status = "approved";
+    }
+
+    const orders = await orderCollection
+      .find(matchStage)
+      .sort({ date: sortOrder })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    const totalCount = await orderCollection.countDocuments(matchStage);
+    if (!orders) {
+      return res.status(404).json({ message: "No order found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Orders Found", status: 200, orders, totalCount });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+router.delete(
+  "/bulk-delete-orders",
+  strictAdminMiddleware,
+  async (req, res) => {
+    const { orderIds } = req.body;
+
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      return res.status(400).json({ message: "Invalid or empty order IDs" });
+    }
+    const objectIds = orderIds.map((id) => new ObjectId(id));
+    try {
+      const result = await orderCollection.deleteMany({
+        _id: { $in: objectIds },
+      });
+      if (result.deletedCount > 0) {
+        return res.status(200).json({
+          message: `${result?.deletedCount} orders deleted successfully`,
+          result,
+          status: 200,
+        });
+      } else {
+        return res
+          .status(404)
+          .json({ message: "No orders found to delete", status: 404 });
+      }
+    } catch (error) {
+      return res
+        .status(500)
+        .json({ message: "Server error", error: error.message, status: 500 });
+    }
+  }
+);
+
+router.put("/approve-order/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params; // Order ID
+    const { userId, courseIds } = req.body; // Extract userId and courseIds from the request body
+
+    // Validate order ID
+    if (!id || !ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid order ID", status: 400 });
+    }
+
+    // Update the order status to "approved"
+    const orderUpdateResult = await orderCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: "approved" } }
+    );
+
+    // Check if the order was found and updated
+    if (orderUpdateResult.matchedCount === 0) {
+      return res.status(404).json({ message: "Order not found", status: 404 });
+    }
+
+    // If userId is provided, update the user's enrolledCourses
+    if (userId && ObjectId.isValid(userId)) {
+      const enrollOptions = {
+        courseId: new ObjectId(id), // Assuming the order ID is the course ID
+        approvedOn: convertToDhakaTime(new Date()), // Add the approval timestamp
+      };
+
+      // Add the course to the user's enrolledCourses array
+      await usersCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        { $push: { enrolledCourses: enrollOptions } }
+      );
+    }
+
+    // If courseIds are provided, update the students array in the courseCollection
+    if (courseIds && Array.isArray(courseIds) && courseIds.length > 0) {
+      const validCourseIds = courseIds.filter((courseId) =>
+        ObjectId.isValid(courseId)
+      );
+
+      if (validCourseIds.length > 0) {
+        await courseCollection.updateMany(
+          {
+            _id: {
+              $in: validCourseIds.map((courseId) => new ObjectId(courseId)),
+            },
+          },
+          { $addToSet: { students: new ObjectId(userId) } }
+        );
+      }
+    }
+
+    // Return success response
+    return res.status(200).json({
+      message: "Order approved successfully",
+      status: 200,
+      result: orderUpdateResult,
+    });
+  } catch (error) {
+    console.error("Error approving order:", error);
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+      status: 500,
+    });
+  }
 });
 
 export default router;
