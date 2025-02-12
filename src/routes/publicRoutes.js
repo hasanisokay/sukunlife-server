@@ -565,10 +565,13 @@ router.get("/products", async (req, res) => {
         { $limit: limit },
         {
           $project: {
+            _id: 1,
             title: 1,
+            productId: 1,
             price: 1,
             images: 1,
-            productId: 1,
+            colorVariants: 1,
+            sizeVariants: 1,
             reviewsCount: { $size: "$reviews" },
             ratingSum: {
               $cond: {
@@ -657,22 +660,18 @@ router.get("/check-voucher", async (req, res) => {
     const code = query?.code;
     const totalPrice = parseFloat(query?.totalPrice);
     if (!code || code.length < 1) {
-      return res
-        .status(400)
-        .json({
-          message: "Voucher code must be at least 1 character long.",
-          isValid: false,
-        });
+      return res.status(400).json({
+        message: "Voucher code must be at least 1 character long.",
+        isValid: false,
+      });
     }
 
     if (isNaN(totalPrice) || totalPrice <= 0) {
-      return res
-        .status(400)
-        .json({
-          message: "Total price must be a valid positive number.",
-          isValid: false,
-          status: 400,
-        });
+      return res.status(400).json({
+        message: "Total price must be a valid positive number.",
+        isValid: false,
+        status: 400,
+      });
     }
 
     const voucher = await voucherCollection.findOne({ code });
@@ -688,13 +687,11 @@ router.get("/check-voucher", async (req, res) => {
       const expiryDate = new Date(voucher.expiryDate);
 
       if (currentDate > expiryDate) {
-        return res
-          .status(400)
-          .json({
-            message: "Voucher has expired.",
-            isValid: false,
-            status: 400,
-          });
+        return res.status(400).json({
+          message: "Voucher has expired.",
+          isValid: false,
+          status: 400,
+        });
       }
     }
 

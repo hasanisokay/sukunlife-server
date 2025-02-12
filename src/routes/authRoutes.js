@@ -8,7 +8,16 @@ const router = express.Router();
 const db = await dbConnect();
 import cookie from "cookie";
 import { ObjectId } from "mongodb";
-import { ACCESS_COOKIE_MAX_AGE, ACCESS_COOKIE_NAME, ACCESS_EXPIRATION, ACCESS_TOKEN_SECRET_KEY, REFRESH_COOKIE_MAX_AGE, REFRESH_COOKIE_NAME, REFRESH_EXPIRATION, REFRESH_SECRET_KEY } from "../constants/names.mjs";
+import {
+  ACCESS_COOKIE_MAX_AGE,
+  ACCESS_COOKIE_NAME,
+  ACCESS_EXPIRATION,
+  ACCESS_TOKEN_SECRET_KEY,
+  REFRESH_COOKIE_MAX_AGE,
+  REFRESH_COOKIE_NAME,
+  REFRESH_EXPIRATION,
+  REFRESH_SECRET_KEY,
+} from "../constants/names.mjs";
 
 const usersCollection = db.collection("users");
 const otpCollection = db.collection("otps");
@@ -35,9 +44,9 @@ router.post("/login", async (req, res) => {
       userId: user._id,
       createdAt: new Date(),
     });
-
+    const { cart, ...userForPayload } = user;
     const accessTokenPayload = {
-      user,
+      user:userForPayload,
     };
 
     const refreshTokenPayload = {
@@ -52,7 +61,7 @@ router.post("/login", async (req, res) => {
     const refreshToken = jwt.sign(refreshTokenPayload, REFRESH_SECRET_KEY, {
       expiresIn: REFRESH_EXPIRATION,
     });
-
+    // console.log(accessToken)
     res.cookie(ACCESS_COOKIE_NAME, accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production" ? true : false,
@@ -166,6 +175,7 @@ router.post("/signup", async (req, res) => {
       role: "user",
       status: "active",
       joined: new Date(),
+      cart: [],
     };
     await usersCollection.insertOne(newUser);
     return res.status(201).json({ message: "Signup successful", status: 200 });
@@ -324,9 +334,9 @@ router.post("/refresh", async (req, res) => {
     }
 
     delete user.password;
-
+    const { cart, ...userForPayload } = user;
     const accessTokenPayload = {
-      user,
+      user:userForPayload,
     };
 
     const newAccessToken = jwt.sign(
@@ -338,11 +348,13 @@ router.post("/refresh", async (req, res) => {
     );
 
     // Update cookies for web clients
+
     if (rfrToken) {
       res.cookie(ACCESS_COOKIE_NAME, newAccessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict",
+        // sameSite: "lax",
         maxAge: ACCESS_COOKIE_MAX_AGE,
       });
     }
