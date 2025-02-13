@@ -44,7 +44,7 @@ router.post("/login", async (req, res) => {
       userId: user._id,
       createdAt: new Date(),
     });
-    const { cart, ...userForPayload } = user;
+    const { cart,enrolledCourses, ...userForPayload } = user;
     const accessTokenPayload = {
       user:userForPayload,
     };
@@ -334,7 +334,7 @@ router.post("/refresh", async (req, res) => {
     }
 
     delete user.password;
-    const { cart, ...userForPayload } = user;
+    const { cart,enrolledCourses, ...userForPayload } = user;
     const accessTokenPayload = {
       user:userForPayload,
     };

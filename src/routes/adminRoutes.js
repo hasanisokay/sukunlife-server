@@ -732,7 +732,7 @@ router.get("/orders", strictAdminMiddleware, async (req, res) => {
     const limit = parseInt(query.limit) || 1000000;
     const page = query.page || 1;
     const keyword = query.keyword || "";
-    const filter = query.filter 
+    const filter = query.filter;
     const matchStage = {};
     const sort = query.sort || "newest";
     const sortOrder = sort === "newest" ? -1 : 1;
@@ -873,6 +873,43 @@ router.put("/approve-order/:id", strictAdminMiddleware, async (req, res) => {
       error: error.message,
       status: 500,
     });
+  }
+});
+
+router.get("/dashboard", strictAdminMiddleware, async (req, res) => {
+  try {
+    const blogCount = await blogsCollection.countDocuments();
+    const userCount = await usersCollection.countDocuments({ role: "user" });
+    const adminCount = await usersCollection.countDocuments({ role: "admin" });
+    const shopProductCount = await shopCollection.countDocuments();
+    const pendingOrdersCount = await orderCollection.countDocuments({
+      status: "pending",
+    });
+
+    const upcomingAppointmentsCount =
+      await appointmentCollection.countDocuments({
+        bookedDate: { $gt: new Date() },
+      });
+    const coursesCount = await courseCollection.countDocuments();
+    return res
+      .status(200)
+      .json({
+        data: {
+          blogCount,
+          userCount,
+          adminCount,
+          shopProductCount,
+          pendingOrdersCount,
+          upcomingAppointmentsCount,
+          coursesCount,
+        },
+        message: "Data Found",
+        status: 200,
+      });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
 

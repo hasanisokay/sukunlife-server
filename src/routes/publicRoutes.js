@@ -1,13 +1,13 @@
 import express from "express";
 import dbConnect from "../config/db.mjs";
 import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
-import convertTo12HourFormat from "../utils/convertTo12HourFormat.mjs";
 import dotenv from "dotenv";
 import convertDateToDateObject from "../utils/convertDateToDateObject.mjs";
 import { ObjectId } from "mongodb";
-import nodemailer from 'nodemailer';
+import nodemailer from "nodemailer";
 import sendOrderEmailToAdmin from "../utils/sendOrderEmailToAdmin.mjs";
 import sendOrderEmailToUser from "../utils/sendOrderEmailToUser.mjs";
+import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -20,7 +20,6 @@ const shopCollection = db.collection("shop");
 const usersCollection = db.collection("users");
 const voucherCollection = db.collection("vouchers");
 const orderCollection = db.collection("orders");
-
 
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -184,6 +183,7 @@ router.post("/book-appointment", async (req, res) => {
         date,
         times: { $size: 0 },
       });
+      await sendAdminBookingConfirmationEmail(bookingData, transporter);
       return res.status(200).json({
         message: "Booked successfully.",
         result,
@@ -197,121 +197,6 @@ router.post("/book-appointment", async (req, res) => {
       status: 500,
       error: error.message,
     });
-  }
-});
-
-router.post("/sendEmail", async (req, res) => {
-  try {
-    const bookingData = req.body;
-
-    let mailOptions = {
-      to: "sukunlifebd@gmail.com",
-      subject: "New Appointment - SukunLife",
-      html: `<!DOCTYPE html>
-      <html lang="en">
-      <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>New Appointment</title>
-          <style>
-              body {
-                  font-family: Arial, sans-serif;
-                  background-color: #f4f4f4;
-                  margin: 0;
-                  padding: 0;
-              }
-              .email-container {
-                  max-width: 600px;
-                  margin: 20px auto;
-                  background-color: #ffffff;
-                  border-radius: 8px;
-                  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-                  overflow: hidden;
-              }
-              .email-header {
-                  background-color: #5a9433;
-                  color: #ffffff;
-                  text-align: center;
-                  padding: 20px;
-              }
-              .email-header h2 {
-                  margin: 0;
-              }
-              .email-body {
-                  padding: 20px;
-                  color: #333333;
-              }
-              .email-body ul {
-                  list-style: none;
-                  padding: 0;
-              }
-              .email-body li {
-                  margin-bottom: 10px;
-                  font-size: 16px;
-              }
-              .email-body li strong {
-                  color: #5a9433;
-              }
-              .email-footer {
-                  background-color: #f4f4f4;
-                  text-align: center;
-                  padding: 10px;
-                  font-size: 14px;
-                  color: #666666;
-              }
-          </style>
-      </head>
-      <body>
-          <div class="email-container">
-              <div class="email-header">
-                  <h2>New Appointment Details</h2>
-              </div>
-              <div class="email-body">
-                  <ul>
-                      <li><strong>Name:</strong> ${formData.name}</li>
-                      <li><strong>Phone Number:</strong> ${
-                        bookingData.mobile
-                      }</li>
-                      <li><strong>Address:</strong> ${bookingData.address}</li>
-                      <li><strong>Service:</strong> ${
-                        bookingData.service.label
-                      }</li>
-                      <li><strong>Date:</strong> ${bookingData.date}</li>
-                      <li><strong>Time:</strong> ${convertTo12HourFormat(
-                        bookingData.time
-                      )}</li>
-                      <li><strong>Problem:</strong> ${bookingData.problem}</li>
-                      <li><strong>Advance Payment:</strong>${
-                        bookingData.advancePayment
-                          ? `Trx Id: ${bookingData?.transactionNumber}`
-                          : bookingData.advancePayment
-                      }</li>
-                  </ul>
-              </div>
-              <div class="email-footer">
-                  © 2025 SukunLife BD. All rights reserved.
-              </div>
-          </div>
-      </body>
-      </html>`,
-    };
-
-    try {
-      const re = await transporter.sendMail(mailOptions);
-      if (re?.messageId) {
-        res
-          .status(200)
-          .send({ status: 200, message: "Email sent successfully" });
-      } else {
-        res.status(400).send({ status: 400, message: `Email Not Sent` });
-      }
-    } catch (error) {
-      res
-        .status(500)
-        .send({ status: 500, message: `Error sending email, ${error}` });
-    }
-  } catch {
-    res.status(500).send({ message: "Internal Server Error" });
   }
 });
 
@@ -744,10 +629,9 @@ router.get("/check-voucher", async (req, res) => {
 router.post("/place-order", async (req, res) => {
   try {
     const data = req.body;
-    data.date = convertDateToDateObject(new Date);
+    data.date = convertDateToDateObject(new Date());
     data.status = "pending";
     const result = await orderCollection.insertOne(data);
-
 
     if (result?.insertedId) {
       await sendOrderEmailToAdmin(data, transporter);
@@ -769,4 +653,33 @@ router.post("/place-order", async (req, res) => {
   }
 });
 
+router.get("/user-enrolled-courses/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const result = await usersCollection.findOne(
+      { _id: new ObjectId(userId) },
+      { projection: { _id: 1, enrolledCourses: 1 } }
+    );
+    if (result?.enrolledCourses) {
+      return res.status(200).json({
+        message: "Courses found.",
+        courses: result,
+        status: 200,
+      });
+    } else {
+      return res.status(404).json({
+        message: "No course found.",
+        courses: result,
+        status: 404,
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
 export default router;
