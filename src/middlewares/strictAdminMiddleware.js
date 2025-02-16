@@ -52,7 +52,7 @@ const strictAdminMiddleware = async (req, res, next) => {
     req.user = userFromToken;
     next();
   } catch (error) {
-    console.error("Admin middleware error:", error);
+    console.log("Admin middleware error:", error);
     return res
       .status(403)
       .json({ message: "Forbidden: Invalid token", status: 403 });
