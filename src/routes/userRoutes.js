@@ -10,6 +10,7 @@ import sendOrderEmailToAdmin from "../utils/sendOrderEmailToAdmin.mjs";
 import sendOrderEmailToUser from "../utils/sendOrderEmailToUser.mjs";
 import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
 import lowUserOnlyMiddleware from "../middlewares/lowUserOnlyMiddleware.js";
+import strictUserOnlyMiddleware from "../middlewares/strictUserOnlyMiddleware.mjs";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -108,5 +109,70 @@ router.put("/update-user-info", lowUserOnlyMiddleware, async (req, res) => {
       .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
+router.get(
+  "/user-enrolled-courses",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const result = await courseCollection
+        .find(
+          { students: userId },
+          { projection: { _id: 1, title: 1, courseId: 1, coverPhotoUrl: 1 } }
+        )
+        .toArray();
+      if (result) {
+        return res.status(200).json({
+          message: "Courses found.",
+          courses: result,
+          status: 200,
+        });
+      } else {
+        return res.status(404).json({
+          message: "No course found.",
+          courses: result,
+          status: 404,
+        });
+      }
+    } catch (error) {
+      return res.status(500).json({
+        message: "Server error",
+        status: 500,
+        error: error.message,
+      });
+    }
+  }
+);
 
+router.get(
+  "/user-enrolled-courses/:courseId",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+
+      const result = await courseCollection.findOne({ courseId });
+
+      if (result) {
+        return res.status(200).json({
+          message: "Course found.",
+          course: result,
+          status: 200,
+        });
+      } else {
+        return res.status(404).json({
+          message: "No course found.",
+          course: result,
+          status: 404,
+        });
+      }
+    } catch (error) {
+      return res.status(500).json({
+        message: "Server error",
+        status: 500,
+        error: error.message,
+      });
+    }
+  }
+);
 export default router;
