@@ -175,4 +175,52 @@ router.get(
     }
   }
 );
+
+router.put("/update-progress", lowUserOnlyMiddleware, async (req, res) => {
+  try {
+    const body = req.body;
+    const userId = req.user._id;
+    const courseId = body.courseId;
+    body.date = new Date();
+
+    // Parsing integer values for module and item
+    body.module = parseInt(body.module);
+    body.item = parseInt(body.item);
+
+    // Create the progress object for lastSync
+    const progress = {
+      module: body.module,
+      item: body.item,
+      percentage: body.percentage || 0, // If no percentage is passed, set it to 0
+      date: body.date,
+    };
+
+    // Update query to update the lastSync for the specific course
+    const result = await usersCollection.updateOne(
+      {
+        _id: new ObjectId(userId),
+        "enrolledCourses.courseId": new ObjectId(courseId),
+      },
+      {
+        $set: {
+          "enrolledCourses.$.lastSync": progress, // Update lastSync for the matched course
+        },
+      }
+    );
+
+    // Check if any document was updated
+    if (result.modifiedCount === 0) {
+      return res.status(400).json({ message: "No changes made.", status: 400 });
+    }
+
+    // Send success response
+    res
+      .status(200)
+      .json({ status: 200, message: "Progress updated successfully." });
+  } catch (error) {
+    // Handle server error
+    res.status(500).json({status:500, message: "Internal server error.", error });
+  }
+});
+
 export default router;
