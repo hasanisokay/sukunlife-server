@@ -150,7 +150,34 @@ router.get(
   async (req, res) => {
     try {
       const { courseId } = req.params;
-
+      const courseInfo = await courseCollection.findOne(
+        {
+          courseId,
+          students: req?.user?._id,
+        },
+        { projection: { _id: 1 } }
+      );
+      if (!courseInfo) {
+        return res.status(404).json({
+          message: "No course found.",
+          status: 404,
+        });
+      }
+      const isEnrolled = await usersCollection.findOne(
+        {
+          _id: new ObjectId(req?.user?._id),
+          "enrolledCourses.courseId": new ObjectId(courseInfo._id),
+        },
+        {
+          projection: { _id: 1 },
+        }
+      );
+      if (!isEnrolled) {
+        return res.status(404).json({
+          message: "No course found.",
+          status: 404,
+        });
+      }
       const result = await courseCollection.findOne({ courseId });
 
       if (result) {
@@ -219,7 +246,120 @@ router.put("/update-progress", lowUserOnlyMiddleware, async (req, res) => {
       .json({ status: 200, message: "Progress updated successfully." });
   } catch (error) {
     // Handle server error
-    res.status(500).json({status:500, message: "Internal server error.", error });
+    res
+      .status(500)
+      .json({ status: 500, message: "Internal server error.", error });
+  }
+});
+
+router.get("/user-orders", strictUserOnlyMiddleware, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const result = await shopCollection.find({ userId }).toArray();
+    console.log({ result, userId });
+    if (result) {
+      return res.status(200).json({
+        message: "Orders found.",
+        orders: result,
+        status: 200,
+      });
+    } else {
+      return res.status(404).json({
+        message: "No order found.",
+        orders: result,
+        status: 404,
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
+
+router.post("/submit-review", async (req, res) => {
+  const { productId, orderId, type, userId, name, comment, rating } = req.body;
+
+  if (
+    !productId ||
+    !orderId ||
+    !type ||
+    !userId ||
+    !name ||
+    !comment ||
+    !rating
+  ) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Missing required fields" });
+  }
+
+  try {
+    // Update the orderCollection to mark the product as reviewed
+    const orderUpdateResult = await orderCollection.updateOne(
+      { _id: new ObjectId(orderId), "cartItems._id": productId },
+      { $set: { "cartItems.$.reviewed": true } }
+    );
+
+    if (orderUpdateResult.modifiedCount === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Order or product not found" });
+    }
+
+    // Prepare the review object
+    const review = {
+      userId,
+      name,
+      comment,
+      rating: parseInt(rating),
+      date: new Date(),
+    };
+
+    // Update the shopCollection or courseCollection based on the type
+    if (type === "product") {
+      const shopUpdateResult = await shopCollection.updateOne(
+        { _id: new ObjectId(productId) },
+        { $push: { reviews: review } }
+      );
+
+      if (shopUpdateResult.modifiedCount === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Product not found in shopCollection",
+        });
+      }
+    } else if (type === "course") {
+      const courseUpdateResult = await courseCollection.updateOne(
+        { _id: new ObjectId(productId) },
+        { $push: { reviews: review } }
+      );
+
+      if (courseUpdateResult.modifiedCount === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Course not found in courseCollection",
+        });
+      }
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid type", status: 400 });
+    }
+    res.status(200).json({
+      success: true,
+      message: "Review submitted successfully",
+      status: 200,
+    });
+  } catch (error) {
+    console.log("Error submitting review:", error);
+    res.status(500).json({
+      status: 500,
+      success: false,
+      message: "Failed to submit review",
+    });
   }
 });
 

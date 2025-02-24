@@ -629,7 +629,6 @@ router.get("/check-voucher", async (req, res) => {
 router.post("/place-order", async (req, res) => {
   try {
     const data = req.body;
-    data.date = convertDateToDateObject(new Date());
     data.status = "pending";
     const result = await orderCollection.insertOne(data);
 
@@ -645,11 +644,44 @@ router.post("/place-order", async (req, res) => {
       });
     }
   } catch (error) {
+    console.log(error);
     return res.status(500).json({
       message: "Server error",
       status: 500,
       error: error.message,
     });
+  }
+});
+router.put("/update-stock-quantity", async (req, res) => {
+  const data = req.body;
+  try {
+    // Prepare an array of update operations
+    const updateOps = data.map((item) => {
+      return {
+        updateOne: {
+          filter: { _id: new ObjectId(item?._id) },
+          update: {
+            $inc: {
+              stockQuantity: -item.quantity, // Decrease stock
+              sold: item.quantity, // Increase sold
+            },
+          },
+        },
+      };
+    });
+
+    // Perform the bulk write operation
+    const result = await shopCollection.bulkWrite(updateOps);
+
+    res.status(200).send({
+      message: "Stock and sold quantities updated successfully",
+      result,
+    });
+  } catch (err) {
+    console.error("Error updating stock and sold quantities:", err);
+    res
+      .status(500)
+      .send({ message: "Error updating stock and sold quantities" });
   }
 });
 
@@ -682,4 +714,60 @@ router.get("/user-enrolled-courses/:userId", async (req, res) => {
     });
   }
 });
+
+router.get("/top-sold-items", async (req, res) => {
+  try {
+    const query = req.query;
+    let limit = parseInt(query.limit || 5);
+
+    // Perform aggregation to get the top sold items
+    const topSoldItems = await shopCollection
+      .aggregate([
+        {
+          $match: {
+            stockQuantity: { $gt: 0 },
+            sold: { $gt: 0 }, // Filter items with stock > 0
+          },
+        },
+        {
+          $sort: { sold: -1 }, // Sort by sold quantity in descending order
+        },
+        {
+          $project: {
+            _id: 1,
+            images: 1,
+            description: 1,
+            productId: 1,
+            title: 1,
+            price: 1,
+            reviewsCount: { $size: "$reviews" }, // Count the number of reviews
+            ratingSum: {
+              // Sum up the ratings for each review
+              $cond: {
+                if: { $gt: [{ $size: "$reviews" }, 0] }, // Check if there are any reviews
+                then: { $sum: "$reviews.rating" }, // Sum up the ratings if reviews exist
+                else: 0, // If no reviews, set ratingSum to 0
+              },
+            },
+          },
+        },
+        {
+          $limit: limit, // Limit the number of items to the requested limit
+        },
+      ])
+      .toArray();
+
+    res.status(200).json({
+      message: `Top ${limit} most sold items`,
+      data: topSoldItems,
+      status: 200,
+    });
+  } catch (err) {
+    console.error(err);
+    res
+      .status(500)
+      .send({ status: 500, message: "Error fetching top sold items" });
+  }
+});
+
 export default router;
