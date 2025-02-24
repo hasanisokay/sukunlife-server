@@ -223,6 +223,7 @@ router.get("/users", lowAdminMiddleware, async (req, res) => {
         role: 1,
         status: 1,
         joined: 1,
+        enrolledCourses: 1,
       })
       .sort({ joined: sortOrder })
       .skip(skip)
@@ -809,58 +810,34 @@ router.delete(
 
 router.put("/approve-order/:id", strictAdminMiddleware, async (req, res) => {
   try {
-    const { id } = req.params; // Order ID
-    const { userId, courseIds } = req.body; // Extract userId and courseIds from the request body
-
-    // Validate order ID
+    const { id } = req.params;
+    const { userId, courseIds } = req.body;
     if (!id || !ObjectId.isValid(id)) {
       return res.status(400).json({ message: "Invalid order ID", status: 400 });
     }
 
-    // Update the order status to "approved"
     const orderUpdateResult = await orderCollection.updateOne(
       { _id: new ObjectId(id) },
       { $set: { status: "approved" } }
     );
 
-    // Check if the order was found and updated
     if (orderUpdateResult.matchedCount === 0) {
       return res.status(404).json({ message: "Order not found", status: 404 });
     }
-
-    // If userId is provided, update the user's enrolledCourses
-    if (userId && ObjectId.isValid(userId)) {
-      const enrollOptions = {
-        courseId: new ObjectId(id), // Assuming the order ID is the course ID
-        approvedOn: convertToDhakaTime(new Date()), // Add the approval timestamp
-      };
-
-      // Add the course to the user's enrolledCourses array
+    if (courseIds && courseIds?.length > 0) {
       await usersCollection.updateOne(
         { _id: new ObjectId(userId) },
-        { $push: { enrolledCourses: enrollOptions } }
+        { $push: { enrolledCourses: { $each: courseIds } } }
       );
-    }
-
-    // If courseIds are provided, update the students array in the courseCollection
-    if (courseIds && Array.isArray(courseIds) && courseIds.length > 0) {
-      const validCourseIds = courseIds.filter((courseId) =>
-        ObjectId.isValid(courseId)
-      );
-
-      if (validCourseIds.length > 0) {
-        await courseCollection.updateMany(
-          {
-            _id: {
-              $in: validCourseIds.map((courseId) => new ObjectId(courseId)),
-            },
+      await courseCollection.updateMany(
+        {
+          courseId: {
+            $in: courseIds.map((c) => c.courseId),
           },
-          { $addToSet: { students: new ObjectId(userId) } }
-        );
-      }
+        },
+        { $addToSet: { students: userId } }
+      );
     }
-
-    // Return success response
     return res.status(200).json({
       message: "Order approved successfully",
       status: 200,
@@ -891,21 +868,19 @@ router.get("/dashboard", strictAdminMiddleware, async (req, res) => {
         bookedDate: { $gt: new Date() },
       });
     const coursesCount = await courseCollection.countDocuments();
-    return res
-      .status(200)
-      .json({
-        data: {
-          blogCount,
-          userCount,
-          adminCount,
-          shopProductCount,
-          pendingOrdersCount,
-          upcomingAppointmentsCount,
-          coursesCount,
-        },
-        message: "Data Found",
-        status: 200,
-      });
+    return res.status(200).json({
+      data: {
+        blogCount,
+        userCount,
+        adminCount,
+        shopProductCount,
+        pendingOrdersCount,
+        upcomingAppointmentsCount,
+        coursesCount,
+      },
+      message: "Data Found",
+      status: 200,
+    });
   } catch (error) {
     return res
       .status(500)

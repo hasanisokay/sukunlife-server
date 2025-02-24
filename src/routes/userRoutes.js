@@ -163,11 +163,12 @@ router.get(
           status: 404,
         });
       }
+
       const isEnrolled = await usersCollection.findOne(
         {
           _id: new ObjectId(req?.user?._id),
-          "enrolledCourses.courseId": new ObjectId(courseInfo._id),
-        },
+          "enrolledCourses.courseId": courseInfo._id.toString(),
+          },
         {
           projection: { _id: 1 },
         }
@@ -179,7 +180,6 @@ router.get(
         });
       }
       const result = await courseCollection.findOne({ courseId });
-
       if (result) {
         return res.status(200).json({
           message: "Course found.",
