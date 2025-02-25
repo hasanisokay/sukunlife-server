@@ -211,7 +211,12 @@ router.get("/users", lowAdminMiddleware, async (req, res) => {
         { email: { $regex: keyword, $options: "i" } },
       ];
     }
-
+    if (filter === "admins_only") {
+      matchStage.role = "admin";
+    }
+    if (filter === "users_only") {
+      matchStage.role = "user";
+    }
     const users = await usersCollection
       .find(matchStage)
       .project({
@@ -404,6 +409,12 @@ router.post("/add-new-course", strictAdminMiddleware, async (req, res) => {
     const data = req.body;
     data.addedOn = convertToDhakaTime(data.addedOn);
     data.price = parseFloat(data.price);
+    if (!data.students) {
+      data.students = [];
+    }
+    if (!data.reviews) {
+      data.reviews = [];
+    }
     const result = await courseCollection.insertOne(data);
 
     return res.status(200).json({
@@ -888,4 +899,42 @@ router.get("/dashboard", strictAdminMiddleware, async (req, res) => {
   }
 });
 
+router.patch("/:userId/role", strictAdminMiddleware, async (req, res) => {
+  try {
+    const { role } = req.body;
+    const { userId } = req.params;
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { role } }
+    );
+    return res.status(200).json({
+      result,
+      message: `Users role updated to ${role}`,
+      status: 200,
+    });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+router.patch("/:userId/status", strictAdminMiddleware, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const { userId } = req.params;
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { status } }
+    );
+    return res.status(200).json({
+      result,
+      message: `Users status updated to ${status}`,
+      status: 200,
+    });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
 export default router;
