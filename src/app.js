@@ -11,7 +11,7 @@ const corsOptions = {
   origin: (origin, callback) => {
     const allowedOrigins = [
       "http://localhost:3000",
-      "https://sukunlife.vercel.app/",
+      "https://sukunlife.vercel.app",
     ];
     if (allowedOrigins.includes(origin) || !origin) {
       callback(null, true); // Allow the origin
