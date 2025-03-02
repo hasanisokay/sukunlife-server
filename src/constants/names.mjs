@@ -6,7 +6,7 @@ export const REFRESH_SECRET_KEY = process.env.REFRESH_JWT_SECRET;
 
 export const ACCESS_COOKIE_NAME = "acs_token";
 export const REFRESH_COOKIE_NAME = "rfr_token";
-export const ACCESS_EXPIRATION = "2h"; // Shorter expiration for access token
+export const ACCESS_EXPIRATION = "10h"; // Shorter expiration for access token
 export const REFRESH_EXPIRATION = "30d"; // Longer expiration for refresh token
-export const ACCESS_COOKIE_MAX_AGE = 2 * 60 * 60 * 1000; //2 hours
+export const ACCESS_COOKIE_MAX_AGE = 10 * 60 * 60 * 1000; //2 hours
 export const REFRESH_COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
