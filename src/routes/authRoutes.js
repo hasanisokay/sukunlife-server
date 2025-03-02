@@ -79,14 +79,14 @@ router.post("/login", async (req, res) => {
     res.cookie(ACCESS_COOKIE_NAME, accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production" ? true : false,
-      sameSite: "strict",
+      sameSite: "none",
       maxAge: ACCESS_COOKIE_MAX_AGE,
     });
 
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "none",
       maxAge: REFRESH_COOKIE_MAX_AGE,
     });
 
@@ -137,13 +137,13 @@ router.post("/logout", async (req, res) => {
     res.clearCookie(ACCESS_COOKIE_NAME, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "none",
     });
 
     res.clearCookie(REFRESH_COOKIE_NAME, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "none",
     });
 
     return res.status(200).json({ message: "Logout successful", status: 200 });
@@ -152,13 +152,13 @@ router.post("/logout", async (req, res) => {
     res.clearCookie(ACCESS_COOKIE_NAME, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "none",
     });
 
     res.clearCookie(REFRESH_COOKIE_NAME, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: "none",
     });
     return res
       .status(500)
@@ -349,7 +349,7 @@ router.post("/refresh", async (req, res) => {
       res.clearCookie(REFRESH_COOKIE_NAME, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: "none",
       });
 
       return res
@@ -367,12 +367,12 @@ router.post("/refresh", async (req, res) => {
       res.clearCookie(REFRESH_COOKIE_NAME, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: "none",
       });
       res.clearCookie(ACCESS_COOKIE_NAME, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: "none",
       });
 
       return res
@@ -400,7 +400,7 @@ router.post("/refresh", async (req, res) => {
       res.cookie(ACCESS_COOKIE_NAME, newAccessToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
+        sameSite: "none",
         // sameSite: "lax",
         maxAge: ACCESS_COOKIE_MAX_AGE,
       });
