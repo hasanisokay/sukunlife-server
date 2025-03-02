@@ -40,6 +40,7 @@ let transporter = nodemailer.createTransport({
 // Login
 router.post("/login", async (req, res) => {
   const { userIdentifier, password } = req.body;
+  const isProduction = process.env.NODE_ENV === "production";
   try {
     const user = await usersCollection.findOne({
       $or: [{ email: userIdentifier }, { mobile: userIdentifier }],
@@ -50,7 +51,7 @@ router.post("/login", async (req, res) => {
         .status(401)
         .json({ message: "Invalid credentials", status: 401 });
     }
-    delete user.password;
+  
 
     const sessionId = uuidv4();
     await sessionsCollection.insertOne({
@@ -58,7 +59,7 @@ router.post("/login", async (req, res) => {
       userId: user._id,
       createdAt: new Date(),
     });
-    const { cart, enrolledCourses, ...userForPayload } = user;
+    const { password: _, cart, enrolledCourses, ...userForPayload } = user;
     const accessTokenPayload = {
       user: userForPayload,
     };
@@ -78,15 +79,16 @@ router.post("/login", async (req, res) => {
     // console.log(accessToken)
     res.cookie(ACCESS_COOKIE_NAME, accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production" ? true : false,
-      sameSite: "none",
+      secure: isProduction,
+      sameSite: isProduction ? "None" : "Lax",
+    
       maxAge: ACCESS_COOKIE_MAX_AGE,
     });
 
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "none",
+      secure: isProduction,
+      sameSite: isProduction ? "None" : "Lax",
       maxAge: REFRESH_COOKIE_MAX_AGE,
     });
 
@@ -318,6 +320,7 @@ router.post("/reset-password", async (req, res) => {
 
 router.post("/refresh", async (req, res) => {
   try {
+    const isProduction = process.env.NODE_ENV === "production";
     const cookies = cookie.parse(req.headers?.cookie || "");
     const rfrToken = cookies?.rfr_token;
     // const accessToken = cookies.acs_token;
@@ -366,13 +369,13 @@ router.post("/refresh", async (req, res) => {
     if (user?.status === "blocked") {
       res.clearCookie(REFRESH_COOKIE_NAME, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "none",
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax",
       });
       res.clearCookie(ACCESS_COOKIE_NAME, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "none",
+        secure: isProduction,
+        sameSite: isProduction ? "None" : "Lax",
       });
 
       return res
@@ -380,8 +383,7 @@ router.post("/refresh", async (req, res) => {
         .json({ message: "Blocked by admin. Contact Support.", status: 403 });
     }
 
-    delete user.password;
-    const { cart, enrolledCourses, ...userForPayload } = user;
+    const { password:_,cart, enrolledCourses, ...userForPayload } = user;
     const accessTokenPayload = {
       user: userForPayload,
     };
@@ -401,7 +403,6 @@ router.post("/refresh", async (req, res) => {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "none",
-        // sameSite: "lax",
         maxAge: ACCESS_COOKIE_MAX_AGE,
       });
     }
