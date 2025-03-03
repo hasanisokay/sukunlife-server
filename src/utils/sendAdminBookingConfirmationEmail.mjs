@@ -71,12 +71,13 @@ const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
                           bookingData.address
                         }</li>
                         <li><strong>Service:</strong> ${
-                          bookingData?.service?.label
+                          bookingData?.service
                         }</li>
                         <li><strong>Date:</strong> ${bookingData?.date}</li>
                         <li><strong>Time:</strong> ${convertTo12HourFormat(
                           bookingData?.time
                         )}</li>
+                         <li><strong>Consultant:</strong> ${bookingData?.consultant || "any"}</li>
                         <li><strong>Problem:</strong> ${
                           bookingData?.problem
                         }</li>
