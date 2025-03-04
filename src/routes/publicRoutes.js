@@ -20,6 +20,7 @@ const shopCollection = db.collection("shop");
 const usersCollection = db.collection("users");
 const voucherCollection = db.collection("vouchers");
 const orderCollection = db.collection("orders");
+const resourceCollection = db.collection("resources");
 
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -767,6 +768,76 @@ router.get("/top-sold-items", async (req, res) => {
     res
       .status(500)
       .send({ status: 500, message: "Error fetching top sold items" });
+  }
+});
+
+router.get("/resources", async (req, res) => {
+  try {
+    const query = req.query;
+    let limit = parseInt(query.limit) || 10;
+    const page = parseInt(query.page) || 1;
+    const keyword = query.keyword;
+    const matchStage = {};
+    const sort = query.sort;
+    const sortOrder = sort === "newest" ? -1 : 1;
+
+    if (keyword) {
+      matchStage.$or = [
+        { title: { $regex: keyword, $options: "i" } },
+        { description: { $regex: keyword, $options: "i" } },
+      ];
+    }
+    const skip = (page - 1) * limit;
+    const resources = await resourceCollection
+      .find(matchStage)
+      .sort({ date: sortOrder })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    const totalCount = await resourceCollection.countDocuments(matchStage);
+
+    if (resources.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "No resource found", status: 404 });
+    }
+
+    return res.status(200).json({
+      message: "Resources Found",
+      status: 200,
+      resources,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+      currentPage: page,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
+router.get("/resource/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const matchStage = { _id: new ObjectId(id) };
+    const resource = await resourceCollection.findOne(matchStage);
+    if (!resource) {
+      return res
+        .status(404)
+        .json({ message: "Resource Not Found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Resource Found", status: 200, resource });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
   }
 });
 

@@ -15,6 +15,7 @@ const courseCollection = db.collection("courses");
 const shopCollection = db.collection("shop");
 const voucherCollection = db.collection("vouchers");
 const orderCollection = db.collection("orders");
+const resourceCollection = db.collection("resources");
 
 router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
   try {
@@ -937,4 +938,81 @@ router.patch("/:userId/status", strictAdminMiddleware, async (req, res) => {
       .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
+
+router.post("/add-new-resource", strictAdminMiddleware, async (req, res) => {
+  try {
+    const data = req.body;
+    data.date = new Date();
+    const result = await resourceCollection.insertOne(data);
+    return res.status(200).json({
+      message: "Resource added successfully.",
+      status: 200,
+      result,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+      status: 500,
+    });
+  }
+});
+
+router.put("/edit-resource/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = req.body;
+    if (!id || !ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid ID", status: 400 });
+    }
+    const result = await resourceCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: data }
+    );
+    return res.status(200).json({
+      message: "Resource updated successfully",
+      status: 200,
+      result,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+      status: 500,
+    });
+  }
+});
+
+router.delete(
+  "/resources/bulk-delete",
+  strictAdminMiddleware,
+  async (req, res) => {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: "Invalid or empty IDs" });
+    }
+    const objectIds = ids.map((id) => new ObjectId(id));
+    try {
+      const result = await resourceCollection.deleteMany({
+        _id: { $in: objectIds },
+      });
+      if (result.deletedCount > 0) {
+        return res.status(200).json({
+          message: `${result?.deletedCount} resources deleted successfully`,
+          result,
+          status: 200,
+        });
+      } else {
+        return res
+          .status(404)
+          .json({ message: "No reousrce found to delete", status: 404 });
+      }
+    } catch (error) {
+      return res
+        .status(500)
+        .json({ message: "Server error", error: error.message, status: 500 });
+    }
+  }
+);
 export default router;
