@@ -13,8 +13,8 @@ const dbConnect = async () => {
         deprecationErrors: true,
       },
     });
-    // db = client.db("sukunlife-big");
-    db = client.db("sukunlife");
+    db = client.db("sukunlife-big");
+    // db = client.db("sukunlife");
     await client.db("admin").command({ ping: 1 });
     return db;
   } catch (e) {
