@@ -770,6 +770,56 @@ router.get("/top-sold-items", async (req, res) => {
       .send({ status: 500, message: "Error fetching top sold items" });
   }
 });
+router.get("/top-courses", async (req, res) => {
+  try {
+    const query = req.query;
+    let limit = parseInt(query.limit || 5);
+    const courses = await courseCollection
+      .aggregate([
+        { $match: {students: {$ne :[]}}},
+        { $sort: { studentsCount: -1 } },
+        { $limit: limit },
+        {
+          $project: {
+            title: 1,
+            price: 1,
+            instructor: 1,
+            tags: 1,
+            courseId: 1,
+            addedOn: 1,
+            updatedOn: 1,
+            coverPhotoUrl: 1,
+            learningItems: 1,
+            studentsCount: { $size: "$students" },
+            reviewsCount: { $size: "$reviews" },
+            ratingSum: {
+              $cond: {
+                if: { $gt: [{ $size: "$reviews" }, 0] },
+                then: {
+                  $sum: "$reviews.rating",
+                },
+                else: 0,
+              },
+            },
+          },
+        },
+      ])
+      .toArray();
+
+    res.status(200).json({
+      message: `Top ${courses?.length} course items`,
+      courses,
+      status: 200,
+    });
+  } catch (err) {
+    console.error(err);
+    res
+      .status(500)
+      .send({ status: 500, message: "Error fetching top courses." });
+  }
+});
+
+
 
 router.get("/resources", async (req, res) => {
   try {
@@ -777,6 +827,7 @@ router.get("/resources", async (req, res) => {
     let limit = parseInt(query.limit) || 10;
     const page = parseInt(query.page) || 1;
     const keyword = query.keyword;
+    const type = query.type;
     const matchStage = {};
     const sort = query.sort;
     const sortOrder = sort === "newest" ? -1 : 1;
@@ -786,6 +837,9 @@ router.get("/resources", async (req, res) => {
         { title: { $regex: keyword, $options: "i" } },
         { description: { $regex: keyword, $options: "i" } },
       ];
+    }
+    if (type !== "all") {
+      matchStage.type = type;
     }
     const skip = (page - 1) * limit;
     const resources = await resourceCollection
@@ -841,4 +895,35 @@ router.get("/resource/:id", async (req, res) => {
   }
 });
 
+router.get("/top-reviews", async (req, res) => {
+  try {
+    const [shopReviews, courseReviews] = await Promise.all([
+      shopCollection
+        .find({ "reviews.rating": { $gte: 2 } })
+        .limit(5)
+        .project({ _id: 1, reviews: { $elemMatch: { rating: { $gte: 4 } } } })
+        .toArray(),
+
+      courseCollection
+        .find({ "reviews.rating": { $gte: 2 } })
+        .limit(5)
+        .project({ _id: 1, reviews: { $elemMatch: { rating: { $gte: 4 } } } })
+        .toArray(),
+    ]);
+
+    return res.status(200).json({
+      message: "reviews found",
+      status: 200,
+      shopReviews,
+      courseReviews,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
 export default router;
