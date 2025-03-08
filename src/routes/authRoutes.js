@@ -81,17 +81,17 @@ router.post("/login", async (req, res) => {
     res.cookie(ACCESS_COOKIE_NAME, accessToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
+      sameSite: "None" ,
       maxAge: ACCESS_COOKIE_MAX_AGE,
-      domain: DOMAIN
+
     });
 
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
+      sameSite: "None" ,
       maxAge: REFRESH_COOKIE_MAX_AGE,
-      domain: DOMAIN
+
     });
 
     return res.status(200).json({
@@ -406,7 +406,7 @@ router.post("/refresh", async (req, res) => {
         secure: process.env.NODE_ENV === "production",
         sameSite: "none",
         maxAge: ACCESS_COOKIE_MAX_AGE,
-        domain: DOMAIN
+  
       });
     }
 
