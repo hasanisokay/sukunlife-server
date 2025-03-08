@@ -83,7 +83,6 @@ router.post("/login", async (req, res) => {
       secure: isProduction,
       sameSite: "None" ,
       maxAge: ACCESS_COOKIE_MAX_AGE,
-      domain: ".sukunlife.vercel.app",
     });
 
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
@@ -91,7 +90,6 @@ router.post("/login", async (req, res) => {
       secure: isProduction,
       sameSite: "None" ,
       maxAge: REFRESH_COOKIE_MAX_AGE,
-      domain: ".sukunlife.vercel.app",
     });
 
     return res.status(200).json({
@@ -406,7 +404,6 @@ router.post("/refresh", async (req, res) => {
         secure: process.env.NODE_ENV === "production",
         sameSite: "none",
         maxAge: ACCESS_COOKIE_MAX_AGE,
-        domain: ".sukunlife.vercel.app",
       });
     }
 
