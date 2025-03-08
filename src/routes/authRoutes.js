@@ -77,20 +77,6 @@ router.post("/login", async (req, res) => {
     const refreshToken = jwt.sign(refreshTokenPayload, REFRESH_SECRET_KEY, {
       expiresIn: REFRESH_EXPIRATION,
     });
-    // console.log(accessToken)
-    // res.cookie(ACCESS_COOKIE_NAME, accessToken, {
-    //   httpOnly: true,
-    //   secure: isProduction,
-    //   sameSite: "None" ,
-    //   maxAge: ACCESS_COOKIE_MAX_AGE,
-    // });
-
-    // res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
-    //   httpOnly: true,
-    //   secure: isProduction,
-    //   sameSite: "None" ,
-    //   maxAge: REFRESH_COOKIE_MAX_AGE,
-    // });
 
     return res.status(200).json({
       message: "Login successful",
@@ -397,15 +383,6 @@ router.post("/refresh", async (req, res) => {
     );
 
     // Update cookies for web clients
-
-    // if (rfrToken) {
-    //   res.cookie(ACCESS_COOKIE_NAME, newAccessToken, {
-    //     httpOnly: true,
-    //     secure: process.env.NODE_ENV === "production",
-    //     sameSite: "none",
-    //     maxAge: ACCESS_COOKIE_MAX_AGE,
-    //   });
-    // }
 
     // Return the new tokens for mobile clients
     return res.status(200).json({
