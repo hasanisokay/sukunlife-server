@@ -81,8 +81,8 @@ router.post("/login", async (req, res) => {
       httpOnly: true,
       secure: isProduction,
       sameSite: isProduction ? "None" : "Lax",
-    
       maxAge: ACCESS_COOKIE_MAX_AGE,
+      domain: '.vercel.app'
     });
 
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
@@ -90,6 +90,7 @@ router.post("/login", async (req, res) => {
       secure: isProduction,
       sameSite: isProduction ? "None" : "Lax",
       maxAge: REFRESH_COOKIE_MAX_AGE,
+      domain: '.vercel.app'
     });
 
     return res.status(200).json({
@@ -404,6 +405,7 @@ router.post("/refresh", async (req, res) => {
         secure: process.env.NODE_ENV === "production",
         sameSite: "none",
         maxAge: ACCESS_COOKIE_MAX_AGE,
+        domain: '.vercel.app'
       });
     }
 
