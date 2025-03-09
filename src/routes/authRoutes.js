@@ -182,6 +182,7 @@ router.post("/signup", async (req, res) => {
     await usersCollection.insertOne(newUser);
     return res.status(201).json({ message: "Signup successful", status: 200 });
   } catch (error) {
+    console.log(error)
     return res
       .status(500)
       .json({ message: "Server error", error, status: 500 });

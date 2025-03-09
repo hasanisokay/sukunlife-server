@@ -24,6 +24,7 @@ const shopCollection = db.collection("shop");
 const usersCollection = db.collection("users");
 const voucherCollection = db.collection("vouchers");
 const orderCollection = db.collection("orders");
+const appointmentReviewCollection = db.collection("appointment-reviews");
 
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -34,39 +35,7 @@ let transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS,
   },
 });
-router.get("/user-orders", lowUserOnlyMiddleware, async (req, res) => {
-  try {
-    const query = req.query;
-    const countOnly = query?.countOnly;
-    const userId = req?.user?._id;
-    if (countOnly) {
-      const count = await orderCollection.countDocuments({ userId });
-      return res.status(200).json({
-        status: 200,
-        count,
-        message: "Count of the users order success.",
-      });
-    } else {
-      const orders = await orderCollection.find({ userId }).toArray();
-      if (orders) {
-        return res.status(200).json({
-          status: 200,
-          orders,
-          message: "Orders of the users found.",
-        });
-      } else {
-        return res.status(404).json({
-          status: 404,
-          message: "No order found of this user.",
-        });
-      }
-    }
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message, status: 500 });
-  }
-});
+
 router.put("/update-user-info", lowUserOnlyMiddleware, async (req, res) => {
   try {
     const body = req.body;
@@ -168,7 +137,7 @@ router.get(
         {
           _id: new ObjectId(req?.user?._id),
           "enrolledCourses.courseId": courseInfo._id.toString(),
-          },
+        },
         {
           projection: { _id: 1 },
         }
@@ -251,34 +220,108 @@ router.put("/update-progress", lowUserOnlyMiddleware, async (req, res) => {
       .json({ status: 500, message: "Internal server error.", error });
   }
 });
-
 router.get("/user-orders", strictUserOnlyMiddleware, async (req, res) => {
   try {
-    const userId = req.user._id;
-    const result = await shopCollection.find({ userId }).toArray();
-    console.log({ result, userId });
-    if (result) {
+    const query = req.query;
+    const countOnly = query?.countOnly;
+    const appointmentsOnly = query?.appointmentsOnly;
+    const userId = req?.user?._id;
+    if (appointmentsOnly === "true") {
+      const appointments = await appointmentCollection
+        .find({ "loggedInUser._id": userId })
+        .toArray();
+
+      if (appointments) {
+        return res.status(200).json({
+          status: 200,
+          appointments,
+          message: "Appointments of the users found.",
+        });
+      } else {
+        return res.status(404).json({
+          status: 404,
+          message: "No appointment found of this user.",
+        });
+      }
+    } else if (countOnly==='true') {
+      const orderCount = await orderCollection.countDocuments({ userId });
+      const appointmentCount = await appointmentCollection.countDocuments({
+        "loggedInUser._id": userId,
+      });
       return res.status(200).json({
-        message: "Orders found.",
-        orders: result,
         status: 200,
+        orderCount,
+        appointmentCount,
+        message: "Count of the user order success.",
       });
     } else {
-      return res.status(404).json({
-        message: "No order found.",
-        orders: result,
-        status: 404,
-      });
+      const orders = await orderCollection.find({ userId }).toArray();
+      if (orders) {
+        return res.status(200).json({
+          status: 200,
+          orders,
+          message: "Orders of the users found.",
+        });
+      } else {
+        return res.status(404).json({
+          status: 404,
+          message: "No order found of this user.",
+        });
+      }
     }
   } catch (error) {
-    return res.status(500).json({
-      message: "Server error",
-      status: 500,
-      error: error.message,
-    });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
 
+
+router.post(
+  "/appointment-review",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    const { rating, appointmentId, userId, name, comment } = req.body;
+
+    if (!userId || !name || !comment || !rating || !appointmentId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
+    }
+
+    try {
+      // Prepare the review object
+      const review = {
+        appointmentId,
+        userId,
+        name,
+        comment,
+        rating: parseInt(rating),
+        date: new Date(),
+      };
+      await appointmentCollection.updateOne(
+        { _id: new ObjectId(appointmentId) },
+        { $set: { reviewed: true } }
+      );
+
+      const result = await appointmentReviewCollection.insertOne(review);
+      
+      res.status(200).json({
+        success: true,
+        message: "Review submitted successfully",
+        status: 200,
+        result,
+      });
+    } catch (error) {
+      console.log("Error submitting review:", error);
+      res.status(500).json({
+        status: 500,
+        success: false,
+        message: "Failed to submit review",
+      });
+    }
+  }
+);
 router.post("/submit-review", async (req, res) => {
   const { productId, orderId, type, userId, name, comment, rating } = req.body;
 
@@ -362,5 +405,6 @@ router.post("/submit-review", async (req, res) => {
     });
   }
 });
+
 
 export default router;

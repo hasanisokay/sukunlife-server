@@ -17,6 +17,7 @@ const voucherCollection = db.collection("vouchers");
 const orderCollection = db.collection("orders");
 const resourceCollection = db.collection("resources");
 
+const appointmentReviewCollection = db.collection("appointment-reviews");
 router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
   try {
     const query = req.query;
@@ -1015,4 +1016,45 @@ router.delete(
     }
   }
 );
+
+router.get("/appointments/review/:id", lowAdminMiddleware, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const review = await appointmentReviewCollection.findOne({
+      appointmentId: id,
+    });
+    if (!review) {
+      return res.status(404).json({ message: "Review Not Found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Review Found", status: 200, review });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
+router.delete("/appointments/review/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const review = await appointmentReviewCollection.deleteOne({
+      appointmentId: id,
+    });
+    if (!review) {
+      return res.status(404).json({ message: "Review Not Found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Review deleted", status: 200, review });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
 export default router;

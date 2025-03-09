@@ -22,6 +22,8 @@ const voucherCollection = db.collection("vouchers");
 const orderCollection = db.collection("orders");
 const resourceCollection = db.collection("resources");
 
+const appointmentReviewCollection = db.collection("appointment-reviews");
+
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: process.env.EMAIL_SERVICE_HOST,
@@ -776,7 +778,7 @@ router.get("/top-courses", async (req, res) => {
     let limit = parseInt(query.limit || 5);
     const courses = await courseCollection
       .aggregate([
-        { $match: {students: {$ne :[]}}},
+        { $match: { students: { $ne: [] } } },
         { $sort: { studentsCount: -1 } },
         { $limit: limit },
         {
@@ -818,8 +820,6 @@ router.get("/top-courses", async (req, res) => {
       .send({ status: 500, message: "Error fetching top courses." });
   }
 });
-
-
 
 router.get("/resources", async (req, res) => {
   try {
@@ -897,17 +897,23 @@ router.get("/resource/:id", async (req, res) => {
 
 router.get("/top-reviews", async (req, res) => {
   try {
-    const [shopReviews, courseReviews] = await Promise.all([
+    const query = req.query;
+    let limit = parseInt(query.limit || 5);
+    const [shopReviews, courseReviews, appointmentReviews] = await Promise.all([
       shopCollection
-        .find({ "reviews.rating": { $gte: 2 } })
-        .limit(5)
+        .find({ "reviews.rating": { $gte: 4 } })
+        .limit(limit)
         .project({ _id: 1, reviews: { $elemMatch: { rating: { $gte: 4 } } } })
         .toArray(),
 
       courseCollection
-        .find({ "reviews.rating": { $gte: 2 } })
-        .limit(5)
+        .find({ "reviews.rating": { $gte: 4 } })
+        .limit(limit)
         .project({ _id: 1, reviews: { $elemMatch: { rating: { $gte: 4 } } } })
+        .toArray(),
+      appointmentReviewCollection
+        .find({ rating: { $gte: 4 } })
+        .limit(limit).sort({date:-1})
         .toArray(),
     ]);
 
@@ -916,6 +922,7 @@ router.get("/top-reviews", async (req, res) => {
       status: 200,
       shopReviews,
       courseReviews,
+      appointmentReviews
     });
   } catch (error) {
     console.log(error);
@@ -926,4 +933,5 @@ router.get("/top-reviews", async (req, res) => {
     });
   }
 });
+
 export default router;
