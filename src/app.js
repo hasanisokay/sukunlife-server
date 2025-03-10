@@ -5,8 +5,11 @@ import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import publicRoutes from "./routes/publicRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
+
 dotenv.config();
+
 const app = express();
+
 const corsOptions = {
   origin: (origin, callback) => {
     const allowedOrigins = [
