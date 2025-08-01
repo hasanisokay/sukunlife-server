@@ -14,6 +14,7 @@ const dbConnect = async () => {
       },
     });
     db = client.db("sukunlife-big");
+    // switch to sukunlife big for production.
     // db = client.db("sukunlife");
     await client.db("admin").command({ ping: 1 });
     return db;

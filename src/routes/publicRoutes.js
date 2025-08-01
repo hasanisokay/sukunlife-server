@@ -215,6 +215,13 @@ router.get("/course/:id", async (req, res) => {
         price: 1,
         instructor: 1,
         seoDescription: 1,
+        instructorImage: 1,
+        aboutInstructor: 1,
+        duration:1,
+        instructorDesignation: 1,
+        shortDescription: 1,
+        additionalMaterials: 1,
+        courseIncludes: 1,
         tags: 1,
         courseId: 1,
         learningItems: 1,
@@ -324,7 +331,9 @@ router.get("/courses", async (req, res) => {
           $project: {
             title: 1,
             price: 1,
+            duration: 1,
             instructor: 1,
+            shortDescription: 1,
             tags: 1,
             courseId: 1,
             addedOn: 1,
@@ -462,6 +471,7 @@ router.get("/products", async (req, res) => {
             _id: 1,
             title: 1,
             productId: 1,
+            description: 1,
             price: 1,
             images: 1,
             colorVariants: 1,
@@ -786,6 +796,9 @@ router.get("/top-courses", async (req, res) => {
             title: 1,
             price: 1,
             instructor: 1,
+            // instructorImage: 1,
+            description: 1,
+            duration: 1,
             tags: 1,
             courseId: 1,
             addedOn: 1,
@@ -898,7 +911,7 @@ router.get("/resource/:id", async (req, res) => {
 router.get("/top-reviews", async (req, res) => {
   try {
     const query = req.query;
-    let limit = parseInt(query.limit || 5);
+    let limit = parseInt(query.limit || 3);
     const [shopReviews, courseReviews, appointmentReviews] = await Promise.all([
       shopCollection
         .find({ "reviews.rating": { $gte: 4 } })
@@ -913,7 +926,8 @@ router.get("/top-reviews", async (req, res) => {
         .toArray(),
       appointmentReviewCollection
         .find({ rating: { $gte: 4 } })
-        .limit(limit).sort({date:-1})
+        .limit(limit)
+        .sort({ date: -1 })
         .toArray(),
     ]);
 
@@ -922,7 +936,7 @@ router.get("/top-reviews", async (req, res) => {
       status: 200,
       shopReviews,
       courseReviews,
-      appointmentReviews
+      appointmentReviews,
     });
   } catch (error) {
     console.log(error);
