@@ -55,6 +55,315 @@ router.get("/blog/:blogUrl", userCheckerMiddleware, async (req, res) => {
     });
   }
 });
+router.get(
+  "/blogs-with-all-category-limited-to-five",
+  userCheckerMiddleware,
+  async (req, res) => {
+    try {
+      const query = req.query;
+      const sort = query.sort || "newest";
+      const limit = parseInt(query.limit) || 5;
+      const sortOrder = sort === "newest" ? -1 : 1;
+      const keyword = query.keyword;
+      let tags = query.tags;
+
+      const matchStage = {};
+      if (req?.user && req?.user?.role !== "admin") {
+        matchStage.postStatus = "public";
+      }
+      if (tags) {
+        matchStage.blogTags = { $in: [tags] };
+      }
+      if (keyword) {
+        matchStage.$or = [
+          { title: { $regex: keyword, $options: "i" } },
+          { content: { $regex: keyword, $options: "i" } },
+          { blogUrl: { $regex: keyword, $options: "i" } },
+          { seoDescription: { $regex: keyword, $options: "i" } },
+        ];
+      }
+
+      // categories without "others"
+      const categories = [
+        {
+          id: "ruqyah",
+          label: "Ruqyah",
+          keywords: ["ruqyah", "রুকইয়াহ", "রুকইয়া", "ruqya"],
+        },
+        {
+          id: "black-magic",
+          label: "Black Magic",
+          keywords: ["black-magic", "black magic", "যাদু", "কালো জাদু"],
+        },
+        {
+          id: "evil-eye",
+          label: "Evil Eye",
+          keywords: [
+            "evil-eye",
+            "evil eye",
+            "evil",
+            "নজর",
+            "বদনজর",
+            "দুষ্ট নজর",
+          ],
+        },
+        {
+          id: "jinn-problem",
+          label: "Jinn Problem",
+          keywords: [
+            "jinn-problem",
+            "jinn",
+            "jinn problem",
+            "জিন",
+            "জ্বিন সমস্যা",
+          ],
+        },
+      ];
+
+      const results = {};
+
+      // handle the 4 main categories
+      for (const cat of categories) {
+        const categoryMatch = {
+          ...matchStage,
+          blogTags: { $in: cat.keywords },
+        };
+
+        const blogs = await blogsCollection
+          .find(categoryMatch)
+          .sort({ date: sortOrder })
+          .limit(limit)
+          .project({
+            title: 1,
+            content: 1,
+            blogUrl: 1,
+            blogCoverPhoto: 1,
+            blogTags: 1,
+          })
+          .toArray();
+
+        results[cat.id] = blogs;
+      }
+
+      // handle "others"
+      const excludedTags = categories.flatMap((cat) => cat.keywords);
+
+      const othersMatch = {
+        ...matchStage,
+        blogTags: { $nin: excludedTags }, // not in any of the above
+      };
+
+      const othersBlogs = await blogsCollection
+        .find(othersMatch)
+        .sort({ date: sortOrder })
+        .limit(limit)
+        .project({
+          title: 1,
+          content: 1,
+          blogUrl: 1,
+          blogCoverPhoto: 1,
+          blogTags: 1,
+        })
+        .toArray();
+
+      results["others"] = othersBlogs;
+
+      return res.status(200).json({
+        message: "Blogs Found",
+        status: 200,
+        categories: results,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Server error",
+        status: 500,
+        error: error.message,
+      });
+    }
+  }
+);
+
+router.get("/blogs-by-tag", userCheckerMiddleware, async (req, res) => {
+  try {
+    const query = req.query;
+    const sort = query.sort || "newest";
+    const limit = parseInt(query.limit) || 5;
+    const skip = parseInt(query.skip) || 0;
+    const sortOrder = sort === "newest" ? -1 : 1;
+    const keyword = query.keyword;
+    const tag = query.tag;
+
+    if (!tag) {
+      return res.status(400).json({
+        message: "Tag is required",
+        status: 400,
+      });
+    }
+
+    const matchStage = {};
+    if (req?.user && req?.user?.role !== "admin") {
+      matchStage.postStatus = "public";
+    }
+
+    // predefined main categories with keywords
+    const categories = [
+      {
+        id: "ruqyah",
+        keywords: ["ruqyah", "রুকইয়াহ", "রুকইয়া", "ruqya"],
+      },
+      {
+        id: "black-magic",
+        keywords: ["black-magic", "black magic", "যাদু", "কালো জাদু"],
+      },
+      {
+        id: "evil-eye",
+        keywords: ["evil-eye", "evil eye", "evil", "নজর", "বদনজর", "দুষ্ট নজর"],
+      },
+      {
+        id: "jinn-problem",
+        keywords: [
+          "jinn-problem",
+          "jinn",
+          "jinn problem",
+          "জিন",
+          "জ্বিন সমস্যা",
+        ],
+      },
+    ];
+
+    if (tag === "others") {
+      const excludedTags = categories.flatMap((cat) => cat.keywords);
+      matchStage.blogTags = { $nin: excludedTags };
+    } else {
+      matchStage.blogTags = { $in: [tag] };
+    }
+
+    if (keyword) {
+      matchStage.$or = [
+        { title: { $regex: keyword, $options: "i" } },
+        { content: { $regex: keyword, $options: "i" } },
+        { blogUrl: { $regex: keyword, $options: "i" } },
+        { seoDescription: { $regex: keyword, $options: "i" } },
+      ];
+    }
+
+    const blogs = await blogsCollection
+      .find(matchStage)
+      .sort({ date: sortOrder })
+      .limit(limit)
+      .skip(skip)
+      .project({
+        title: 1,
+        content: 1,
+        blogUrl: 1,
+        blogCoverPhoto: 1,
+        blogTags: 1,
+      })
+      .toArray();
+
+    return res.status(200).json({
+      message: "Blogs Found",
+      status: 200,
+      tag: tag,
+      blogs,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
+
+router.get(
+  "/similar-blogs-by-tags",
+  userCheckerMiddleware,
+  async (req, res) => {
+    try {
+      const query = req.query;
+      let limit = parseInt(query.limit);
+      const page = parseInt(query.page);
+      const keyword = query.keyword;
+      let tags = query?.tags?.split(",").map((t) => t.trim());
+      let skippingBlogUrl = query.skippingBlogUrl;
+      const matchStage = {};
+      const sort = query.sort;
+      const sortOrder = sort === "newest" ? -1 : 1;
+
+      let skip = parseInt(query?.skip);
+      if (isNaN(skip)) {
+        skip = (page - 1) * limit;
+      }
+
+      if (skip === 0) {
+        limit = page * limit;
+      }
+      if (req?.user && req?.user?.role !== "admin") {
+        matchStage.postStatus = "public";
+      }
+      matchStage.blogUrl = { $ne: skippingBlogUrl };
+
+      const orConditions = [];
+
+      if (tags?.length) {
+        orConditions.push({ blogTags: { $in: tags } });
+      }
+
+      if (keyword) {
+        orConditions.push(
+          { title: { $regex: keyword, $options: "i" } },
+          { content: { $regex: keyword, $options: "i" } },
+          { blogUrl: { $regex: keyword, $options: "i" } },
+          { seoDescription: { $regex: keyword, $options: "i" } }
+        );
+      }
+
+      if (orConditions.length) {
+        matchStage.$or = orConditions;
+      }
+
+      let blogs = await blogsCollection
+        .find(matchStage)
+        .sort({ date: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      if (blogs?.length < limit) {
+        const remaining = limit - blogs.length;
+
+        const extraBlogs = await blogsCollection
+          .find({
+            blogUrl: { $ne: skippingBlogUrl },
+            postStatus: "public",
+            _id: { $nin: blogs.map((b) => b._id) }, // avoid duplicates
+          })
+          .sort({ date: -1 })
+          .limit(remaining)
+          .toArray();
+
+        blogs = [...blogs, ...extraBlogs];
+      }
+
+      if (!blogs.length) {
+        return res
+          .status(404)
+          .json({ message: "No blog found", status: 404, blogs: [] });
+      }
+
+      return res
+        .status(200)
+        .json({ message: "Blogs Found", status: 200, blogs });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Server error",
+        status: 500,
+        error: error.message,
+      });
+    }
+  }
+);
 router.get("/blogs", userCheckerMiddleware, async (req, res) => {
   try {
     const query = req.query;
@@ -217,7 +526,7 @@ router.get("/course/:id", async (req, res) => {
         seoDescription: 1,
         instructorImage: 1,
         aboutInstructor: 1,
-        duration:1,
+        duration: 1,
         instructorDesignation: 1,
         shortDescription: 1,
         additionalMaterials: 1,
@@ -837,14 +1146,18 @@ router.get("/top-courses", async (req, res) => {
 router.get("/resources", async (req, res) => {
   try {
     const query = req.query;
-    let limit = parseInt(query.limit) || 10;
+    let limit = parseInt(query.limit) || 5;
     const page = parseInt(query.page) || 1;
     const keyword = query.keyword;
     const type = query.type;
     const matchStage = {};
-    const sort = query.sort;
+    const sort = query.sort || "newest";
+    const subType = query.subType || "";
     const sortOrder = sort === "newest" ? -1 : 1;
-
+    if (subType !== "all") {
+      matchStage.videoLang = subType;
+    }
+// console.log(limit)
     if (keyword) {
       matchStage.$or = [
         { title: { $regex: keyword, $options: "i" } },
@@ -855,28 +1168,50 @@ router.get("/resources", async (req, res) => {
       matchStage.type = type;
     }
     const skip = (page - 1) * limit;
-    const resources = await resourceCollection
-      .find(matchStage)
-      .sort({ date: sortOrder })
-      .skip(skip)
-      .limit(limit)
-      .toArray();
 
-    const totalCount = await resourceCollection.countDocuments(matchStage);
-
-    if (resources.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No resource found", status: 404 });
+    let resources;
+    if (type !== "all") {
+      resources = await resourceCollection
+        .find(matchStage)
+        .sort({ date: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+    } else {
+      resources = await resourceCollection
+        .aggregate([
+          {
+            $facet: {
+              audio: [
+                { $match: { type: "audio" } },
+                { $sort: { date: sortOrder } },
+                { $limit: limit },
+              ],
+              video: [
+                { $match: { type: "video" } },
+                { $sort: { date: sortOrder } },
+                { $limit: limit },
+              ],
+              literature: [
+                { $match: { type: "literature" } },
+                { $sort: { date: sortOrder } },
+                { $limit: limit },
+              ],
+              quran: [
+                { $match: { type: "quran" } },
+                { $sort: { date: sortOrder } },
+                { $limit: limit },
+              ],
+            },
+          },
+        ])
+        .toArray();
     }
 
     return res.status(200).json({
-      message: "Resources Found",
+      message: "Success",
       status: 200,
       resources,
-      totalCount,
-      totalPages: Math.ceil(totalCount / limit),
-      currentPage: page,
     });
   } catch (error) {
     return res.status(500).json({
