@@ -1148,16 +1148,18 @@ router.get("/resources", async (req, res) => {
     const query = req.query;
     let limit = parseInt(query.limit) || 5;
     const page = parseInt(query.page) || 1;
+    let skip;
+    skip = parseInt(query.skip);
     const keyword = query.keyword;
     const type = query.type;
     const matchStage = {};
     const sort = query.sort || "newest";
     const subType = query.subType || "";
     const sortOrder = sort === "newest" ? -1 : 1;
-    if (subType !== "all") {
+    if (subType !== "all" && subType) {
       matchStage.videoLang = subType;
     }
-// console.log(limit)
+    // console.log(limit)
     if (keyword) {
       matchStage.$or = [
         { title: { $regex: keyword, $options: "i" } },
@@ -1167,10 +1169,12 @@ router.get("/resources", async (req, res) => {
     if (type !== "all") {
       matchStage.type = type;
     }
-    const skip = (page - 1) * limit;
-
+    if (!skip) {
+      skip = (page - 1) * limit;
+    }
     let resources;
     if (type !== "all") {
+      console.log(matchStage)
       resources = await resourceCollection
         .find(matchStage)
         .sort({ date: sortOrder })
