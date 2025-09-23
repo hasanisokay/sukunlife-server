@@ -1041,18 +1041,18 @@ router.get("/top-sold-items", async (req, res) => {
   try {
     const query = req.query;
     let limit = parseInt(query.limit || 5);
-
-    // Perform aggregation to get the top sold items
-    const topSoldItems = await shopCollection
+    let topSoldItems;
+    
+    topSoldItems = await shopCollection
       .aggregate([
         {
           $match: {
             stockQuantity: { $gt: 0 },
-            sold: { $gte: 0 }, // Filter items with stock > 0
+            sold: { $gte: 0 }, 
           },
         },
         {
-          $sort: { sold: -1 }, // Sort by sold quantity in descending order
+          $sort: { sold: -1 },
         },
         {
           $project: {
@@ -1078,7 +1078,42 @@ router.get("/top-sold-items", async (req, res) => {
         },
       ])
       .toArray();
-
+if(topSoldItems?.length===0){
+      topSoldItems = await shopCollection
+      .aggregate([
+        {
+          $match: {
+            stockQuantity: { $gt: 0 },
+          },
+        },
+        {
+          $sort: { addedOn: -1 },
+        },
+        {
+          $project: {
+            _id: 1,
+            images: 1,
+            description: 1,
+            productId: 1,
+            title: 1,
+            price: 1,
+            reviewsCount: { $size: "$reviews" }, // Count the number of reviews
+            ratingSum: {
+              // Sum up the ratings for each review
+              $cond: {
+                if: { $gt: [{ $size: "$reviews" }, 0] }, // Check if there are any reviews
+                then: { $sum: "$reviews.rating" }, // Sum up the ratings if reviews exist
+                else: 0, // If no reviews, set ratingSum to 0
+              },
+            },
+          },
+        },
+        {
+          $limit: limit, // Limit the number of items to the requested limit
+        },
+      ])
+      .toArray();
+}
     res.status(200).json({
       message: `Top ${limit} most sold items`,
       data: topSoldItems,
