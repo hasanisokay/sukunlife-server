@@ -1048,7 +1048,7 @@ router.get("/top-sold-items", async (req, res) => {
         {
           $match: {
             stockQuantity: { $gt: 0 },
-            sold: { $gt: 0 }, // Filter items with stock > 0
+            sold: { $gte: 0 }, // Filter items with stock > 0
           },
         },
         {
