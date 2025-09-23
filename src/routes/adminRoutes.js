@@ -320,6 +320,8 @@ router.get("/appointments", strictAdminMiddleware, async (req, res) => {
     let limit = parseInt(query.limit) || 1000000;
     const page = query.page || 1;
     const keyword = query.keyword || "";
+    const startDate = query.startDate || "";
+    const endDate = query.endDate || "";
     const matchStage = {};
     const filter = query.filter || "upcoming";
     const sort = query.sort || "newest";
@@ -342,6 +344,11 @@ router.get("/appointments", strictAdminMiddleware, async (req, res) => {
     }
     if (filter === "finished") {
       matchStage.bookedDate = { $lte: new Date() };
+    }
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      matchStage.bookedDate = { $gte: start, $lte: end };
     }
     if (keyword) {
       matchStage.$or = [
@@ -1037,24 +1044,30 @@ router.get("/appointments/review/:id", lowAdminMiddleware, async (req, res) => {
     });
   }
 });
-router.delete("/appointments/review/:id", strictAdminMiddleware, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const review = await appointmentReviewCollection.deleteOne({
-      appointmentId: id,
-    });
-    if (!review) {
-      return res.status(404).json({ message: "Review Not Found", status: 404 });
+router.delete(
+  "/appointments/review/:id",
+  strictAdminMiddleware,
+  async (req, res) => {
+    try {
+      const id = req.params.id;
+      const review = await appointmentReviewCollection.deleteOne({
+        appointmentId: id,
+      });
+      if (!review) {
+        return res
+          .status(404)
+          .json({ message: "Review Not Found", status: 404 });
+      }
+      return res
+        .status(200)
+        .json({ message: "Review deleted", status: 200, review });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Server error",
+        status: 500,
+        error: error.message,
+      });
     }
-    return res
-      .status(200)
-      .json({ message: "Review deleted", status: 200, review });
-  } catch (error) {
-    return res.status(500).json({
-      message: "Server error",
-      status: 500,
-      error: error.message,
-    });
   }
-});
+);
 export default router;
