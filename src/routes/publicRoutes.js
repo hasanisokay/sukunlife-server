@@ -1095,7 +1095,8 @@ router.get("/top-courses", async (req, res) => {
   try {
     const query = req.query;
     let limit = parseInt(query.limit || 5);
-    const courses = await courseCollection
+    let courses;
+    courses = await courseCollection
       .aggregate([
         { $match: { students: { $ne: [] } } },
         { $sort: { studentsCount: -1 } },
@@ -1129,15 +1130,50 @@ router.get("/top-courses", async (req, res) => {
         },
       ])
       .toArray();
-
-    res.status(200).json({
+    console.log(courses);
+    if (courses?.length === 0) {
+      courses = await courseCollection
+        .aggregate([
+          { $sort: { addedOn: -1 } },
+          { $limit: limit },
+          {
+            $project: {
+              title: 1,
+              price: 1,
+              instructor: 1,
+              // instructorImage: 1,
+              description: 1,
+              duration: 1,
+              tags: 1,
+              courseId: 1,
+              addedOn: 1,
+              updatedOn: 1,
+              coverPhotoUrl: 1,
+              learningItems: 1,
+              studentsCount: { $size: "$students" },
+              reviewsCount: { $size: "$reviews" },
+              ratingSum: {
+                $cond: {
+                  if: { $gt: [{ $size: "$reviews" }, 0] },
+                  then: {
+                    $sum: "$reviews.rating",
+                  },
+                  else: 0,
+                },
+              },
+            },
+          },
+        ])
+        .toArray();
+    }
+    return res.status(200).json({
       message: `Top ${courses?.length} course items`,
       courses,
       status: 200,
     });
   } catch (err) {
     console.error(err);
-    res
+    return res
       .status(500)
       .send({ status: 500, message: "Error fetching top courses." });
   }
@@ -1174,7 +1210,7 @@ router.get("/resources", async (req, res) => {
     }
     let resources;
     if (type !== "all") {
-      console.log(matchStage)
+      console.log(matchStage);
       resources = await resourceCollection
         .find(matchStage)
         .sort({ date: sortOrder })
