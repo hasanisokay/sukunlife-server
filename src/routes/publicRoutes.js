@@ -93,7 +93,14 @@ router.get(
         {
           id: "black-magic",
           label: "Black Magic",
-          keywords: ["black-magic", "black magic", "যাদু", "কালো জাদু"],
+          keywords: [
+            "black-magic",
+            "black magic",
+            "blackmagic",
+            "magic",
+            "যাদু",
+            "কালো জাদু",
+          ],
         },
         {
           id: "evil-eye",
@@ -101,7 +108,9 @@ router.get(
           keywords: [
             "evil-eye",
             "evil eye",
+            "evileye",
             "evil",
+            "eye",
             "নজর",
             "বদনজর",
             "দুষ্ট নজর",
@@ -115,6 +124,9 @@ router.get(
             "jinn",
             "jinn problem",
             "জিন",
+            "জীন",
+            "জ্বিন",
+            "জ্বীন",
             "জ্বিন সমস্যা",
           ],
         },
@@ -213,19 +225,38 @@ router.get("/blogs-by-tag", userCheckerMiddleware, async (req, res) => {
       },
       {
         id: "black-magic",
-        keywords: ["black-magic", "black magic", "যাদু", "কালো জাদু"],
+        keywords: [
+          "black-magic",
+          "black magic",
+          "blackmagic",
+          "magic",
+          "যাদু",
+          "কালো জাদু",
+        ],
       },
       {
         id: "evil-eye",
-        keywords: ["evil-eye", "evil eye", "evil", "নজর", "বদনজর", "দুষ্ট নজর"],
+        keywords: [
+          "evil-eye",
+          "evil eye",
+          "evileye",
+          "evil",
+          "নজর",
+          "বদনজর",
+          "দুষ্ট নজর",
+        ],
       },
       {
         id: "jinn-problem",
         keywords: [
           "jinn-problem",
           "jinn",
+          "jin",
           "jinn problem",
           "জিন",
+          "জীন",
+          "জ্বিন",
+          "জ্বীন",
           "জ্বিন সমস্যা",
         ],
       },
@@ -785,6 +816,8 @@ router.get("/products", async (req, res) => {
             images: 1,
             colorVariants: 1,
             sizeVariants: 1,
+            unit: 1,
+            variantPrices: 1,
             reviewsCount: { $size: "$reviews" },
             ratingSum: {
               $cond: {
