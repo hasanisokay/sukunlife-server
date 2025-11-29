@@ -16,6 +16,7 @@ const shopCollection = db.collection("shop");
 const voucherCollection = db.collection("vouchers");
 const orderCollection = db.collection("orders");
 const resourceCollection = db.collection("resources");
+const noteCollection = db.collection("notes");
 
 const appointmentReviewCollection = db.collection("appointment-reviews");
 router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
@@ -1023,6 +1024,219 @@ router.delete(
     }
   }
 );
+// get notes
+router.get("/notes", strictAdminMiddleware, async (req, res) => {
+  try {
+    const query = req.query;
+    const limit = parseInt(query.limit) || 100;
+    const page = query.page || 1;
+    const keyword = query.keyword || "";
+    const matchStage = {};
+    const sort = query.sort || "newest";
+    const sortOrder = sort === "newest" ? -1 : 1;
+    const skip = (page - 1) * limit;
+
+    if (keyword) {
+      matchStage.$or = [
+        { title: { $regex: keyword, $options: "i" } },
+        { content: { $regex: keyword, $options: "i" } },
+        { lastModifiedBy: { $regex: keyword, $options: "i" } },
+      ];
+    }
+
+    const notes = await noteCollection
+      .find(matchStage)
+      .sort({ date: sortOrder })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    const totalCount = await noteCollection.countDocuments(matchStage);
+    if (!notes) {
+      return res.status(404).json({ message: "No note found", status: 404 });
+    }
+    return res
+      .status(200)
+      .json({ message: "Notes Found", status: 200, notes, totalCount });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
+// edit note
+router.put("/reorder-notes", strictAdminMiddleware, async (req, res) => {
+  try {
+    const {
+      draggedNoteId,
+      oldPosition,
+      newPosition,
+      reorderedBy,
+      pinnedNotes,
+    } = req.body;
+    if (oldPosition === newPosition) {
+      return {
+        status: 200,
+        message: "No change in position",
+        modifiedCount: 0,
+      };
+    }
+    const sortField = pinnedNotes ? "pinnedPosition" : "position";
+
+    const forwardFilter = {
+      [sortField]: { $gt: oldPosition, $lte: newPosition },
+    };
+    const backwardFilter = {
+      [sortField]: { $gte: newPosition, $lt: oldPosition },
+    };
+
+    let result;
+
+    if (oldPosition < newPosition) {
+      result = await noteCollection.bulkWrite([
+        {
+          updateMany: {
+            filter: {
+              _id: { $ne: new ObjectId(draggedNoteId) },
+              ...forwardFilter,
+            },
+            update: {
+              $inc: { [sortField]: -1 },
+              $set: {
+                lastModifiedBy: reorderedBy,
+                lastModifiedAt: new Date(),
+              },
+            },
+          },
+        },
+        {
+          updateOne: {
+            filter: { _id: new ObjectId(draggedNoteId) },
+            update: {
+              $set: {
+                [sortField]: newPosition,
+                lastModifiedBy: reorderedBy,
+                lastModifiedAt: new Date(),
+              },
+            },
+          },
+        },
+      ]);
+    } else {
+      result = await noteCollection.bulkWrite([
+        {
+          updateMany: {
+            filter: {
+              _id: { $ne: new ObjectId(draggedNoteId) },
+              ...backwardFilter,
+            },
+            update: {
+              $inc: { [sortField]: 1 },
+              $set: {
+                lastModifiedBy: reorderedBy,
+                lastModifiedAt: new Date(),
+              },
+            },
+          },
+        },
+        {
+          updateOne: {
+            filter: { _id: new ObjectId(draggedNoteId) },
+            update: {
+              $set: {
+                [sortField]: newPosition,
+                lastModifiedBy: reorderedBy,
+                lastModifiedAt: new Date(),
+              },
+            },
+          },
+        },
+      ]);
+    }
+
+    return res.status(200).json({
+      message: "Notes reordered successfully",
+      status: 200,
+      result,
+    });
+  } catch (error) {
+    console.error("Error reordering notes:", error);
+    return res.status(500).json({
+      message: "Server error while reordering notes",
+      error: error.message,
+      status: 500,
+    });
+  }
+});
+router.put("/update-note/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = req.body;
+    if (!id || !ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid ID", status: 400 });
+    }
+    delete data._id;
+    const result = await noteCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: data }
+    );
+    return res.status(200).json({
+      message: "Note updated successfully",
+      status: 200,
+      result,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+      status: 500,
+    });
+  }
+});
+// add note
+router.post("/add-new-note", strictAdminMiddleware, async (req, res) => {
+  try {
+    const data = req.body;
+    data.createdAt = new Date();
+    data.id = Date.now();
+    const result = await noteCollection.insertOne(data);
+    return res.status(200).json({
+      message: "Note added successfully.",
+      status: 200,
+      result,
+      note: data,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+      status: 500,
+    });
+  }
+});
+
+// delete note
+router.delete("/note/:id", strictAdminMiddleware, async (req, res) => {
+  try {
+    const noteId = req.params.id;
+    const result = await noteCollection.deleteOne({
+      _id: new ObjectId(noteId),
+    });
+    if (result.deletedCount > 0) {
+      return res
+        .status(200)
+        .json({ message: "Note deleted.", status: 200, result });
+    } else {
+      return res
+        .status(404)
+        .json({ message: "Could not delete. Try again", status: 404 });
+    }
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message, status: 500 });
+  }
+});
 
 router.get("/appointments/review/:id", lowAdminMiddleware, async (req, res) => {
   try {
