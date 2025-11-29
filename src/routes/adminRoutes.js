@@ -1029,13 +1029,12 @@ router.get("/notes", strictAdminMiddleware, async (req, res) => {
   try {
     const query = req.query;
     const limit = parseInt(query.limit) || 100;
-    const page = query.page || 1;
+    const page = parseInt(query.page) || 1;
     const keyword = query.keyword || "";
     const matchStage = {};
     const sort = query.sort || "newest";
     const sortOrder = sort === "newest" ? -1 : 1;
     const skip = (page - 1) * limit;
-
     if (keyword) {
       matchStage.$or = [
         { title: { $regex: keyword, $options: "i" } },
@@ -1046,7 +1045,7 @@ router.get("/notes", strictAdminMiddleware, async (req, res) => {
 
     const notes = await noteCollection
       .find(matchStage)
-      .sort({ date: sortOrder })
+      .sort({ createdAt: sortOrder })
       .skip(skip)
       .limit(limit)
       .toArray();
