@@ -1237,6 +1237,181 @@ router.delete("/note/:id", strictAdminMiddleware, async (req, res) => {
   }
 });
 
+// add review
+router.post("/add-review", strictAdminMiddleware, async (req, res) => {
+  try {
+    const { type, name, date, rating, comment, productId, courseId } = req.body;
+    const generateUniqueId = (prefix) => {
+      return `${prefix}_${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+    };
+    // const generateUniqueId = () => {
+    //   return new ObjectId().toString();
+    // };
+    // --- 1. Basic Input Validation ---
+    if (!type || !name || !rating || !comment) {
+      return res.status(400).json({
+        message:
+          "Missing required fields: type, name, rating, comment are required.",
+        status: 400,
+      });
+    }
+
+    if (!["appointment", "product", "course"].includes(type)) {
+      return res.status(400).json({
+        message:
+          "Invalid review type. Must be 'appointment', 'product', or 'course'.",
+        status: 400,
+      });
+    }
+
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({
+        message: "Rating must be between 1 and 5.",
+        status: 400,
+      });
+    }
+
+    const reviewDate = new Date(date);
+    let result;
+    
+    // --- 2. Type-Specific Logic ---
+    if (type === "appointment") {
+      const reviewToInsert = {
+        appointmentId: generateUniqueId("appt"),
+        userId: generateUniqueId("user"),
+        name,
+        comment,
+        rating,
+        date: reviewDate,
+      };
+      result = await appointmentReviewCollection.insertOne(reviewToInsert);
+    } else if (type === "product") {
+      if (!productId) {
+        return res.status(400).json({
+          message: "productId is required for product reviews.",
+          status: 400,
+        });
+      }
+      if (!ObjectId.isValid(productId)) {
+        return res.status(400).json({
+          message: "Invalid productId format.",
+          status: 400,
+        });
+      }
+
+      const review = {
+        userId: generateUniqueId("user"),
+        name,
+        rating,
+        comment,
+        date: reviewDate,
+      };
+
+      result = await shopCollection.updateOne(
+        { _id: new ObjectId(productId) },
+        { $push: { reviews: review } }
+      );
+
+      // Check if the product was found and updated
+      if (result.matchedCount === 0) {
+        return res.status(404).json({
+          message: `Product with id ${productId} not found.`,
+          status: 404,
+        });
+      }
+    } else if (type === "course") {
+      if (!courseId) {
+        return res.status(400).json({
+          message: "courseId is required for course reviews.",
+          status: 400,
+        });
+      }
+      if (!ObjectId.isValid(courseId)) {
+        return res.status(400).json({
+          message: "Invalid courseId format.",
+          status: 400,
+        });
+      }
+
+      const review = {
+        userId: generateUniqueId("user"),
+        name,
+        rating,
+        comment,
+        date: reviewDate,
+      };
+
+      result = await courseCollection.updateOne(
+        { _id: new ObjectId(courseId) },
+        { $push: { reviews: review } }
+      );
+
+      // Check if the course was found and updated
+      if (result.matchedCount === 0) {
+        return res.status(404).json({
+          message: `Course with id ${courseId} not found.`,
+          status: 404,
+        });
+      }
+    }
+
+    // --- 3. Success Response ---
+    return res.status(200).json({
+      message: "Review added successfully.",
+      status: 200,
+      result, // Contains the result of the DB operation (insertedId or modifiedCount)
+    });
+  } catch (error) {
+    console.error("Error in /add-review:", error);
+    return res.status(500).json({
+      message: "Server error while adding review.",
+      error: error.message,
+      status: 500,
+    });
+  }
+});
+
+router.get(
+  "/get-name-and-ids-for-review",
+  strictAdminMiddleware,
+  async (req, res) => {
+    const { type } = req.query;
+    let products;
+    let courses;
+    try {
+      if (type === "product") {
+        products = await shopCollection
+          .find()
+          .project({ _id: 1, title: 1 })
+          .toArray();
+      } else if (type === "course") {
+        courses = await courseCollection
+          .find()
+          .project({ _id: 1, title: 1 })
+          .toArray();
+      } else {
+        products = await shopCollection
+          .find()
+          .project({ _id: 1, title: 1 })
+          .toArray();
+        courses = await courseCollection
+          .find()
+          .project({ _id: 1, title: 1 })
+          .toArray();
+      }
+      return res
+        .status(200)
+        .json({ message: "Data Found", status: 200, products, courses });
+    } catch (error) {
+      return res
+        .status(500)
+        .json({ message: "Server error", error: error.message, status: 500 });
+    }
+  }
+);
+
 router.get("/appointments/review/:id", lowAdminMiddleware, async (req, res) => {
   try {
     const id = req.params.id;
