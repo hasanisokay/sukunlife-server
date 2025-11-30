@@ -1276,7 +1276,6 @@ router.post("/add-review", strictAdminMiddleware, async (req, res) => {
     const reviewDate = new Date(date);
     let result;
     
-    // --- 2. Type-Specific Logic ---
     if (type === "appointment") {
       const reviewToInsert = {
         appointmentId: generateUniqueId("appt"),
