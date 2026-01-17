@@ -1277,7 +1277,6 @@ router.get("/resources", async (req, res) => {
     }
     let resources;
     if (type !== "all") {
-      console.log(matchStage);
       resources = await resourceCollection
         .find(matchStage)
         .sort({ date: sortOrder })
@@ -1314,10 +1313,11 @@ router.get("/resources", async (req, res) => {
         ])
         .toArray();
     }
-
+const totalCount = await resourceCollection.countDocuments(matchStage)
     return res.status(200).json({
       message: "Success",
       status: 200,
+      totalCount,
       resources,
     });
   } catch (error) {
