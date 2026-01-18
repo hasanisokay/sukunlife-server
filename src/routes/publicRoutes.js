@@ -192,7 +192,7 @@ router.get(
         error: error.message,
       });
     }
-  }
+  },
 );
 
 router.get("/blogs-by-tag", userCheckerMiddleware, async (req, res) => {
@@ -346,7 +346,7 @@ router.get(
           { title: { $regex: keyword, $options: "i" } },
           { content: { $regex: keyword, $options: "i" } },
           { blogUrl: { $regex: keyword, $options: "i" } },
-          { seoDescription: { $regex: keyword, $options: "i" } }
+          { seoDescription: { $regex: keyword, $options: "i" } },
         );
       }
 
@@ -393,7 +393,7 @@ router.get(
         error: error.message,
       });
     }
-  }
+  },
 );
 router.get("/blogs", userCheckerMiddleware, async (req, res) => {
   try {
@@ -503,7 +503,7 @@ router.post("/book-appointment", async (req, res) => {
     const { date, time } = bookingData;
     const isAvailable = await scheduleCollection.findOne(
       { date: date },
-      { projection: { _id: 1 } }
+      { projection: { _id: 1 } },
     );
     if (!isAvailable) {
       return res.status(400).json({
@@ -520,7 +520,7 @@ router.post("/book-appointment", async (req, res) => {
     if (result.insertedId) {
       await scheduleCollection.updateMany(
         { date: date },
-        { $pull: { times: time } }
+        { $pull: { times: time } },
       );
       await scheduleCollection.deleteMany({
         date,
@@ -855,7 +855,7 @@ router.put("/cart/update", async (req, res) => {
 
     const result = await usersCollection.updateOne(
       { _id: new ObjectId(userId) },
-      { $set: { cart } }
+      { $set: { cart } },
     );
     if (result.modifiedCount > 0) {
       return res.status(200).json({
@@ -1046,7 +1046,7 @@ router.get("/user-enrolled-courses/:userId", async (req, res) => {
 
     const result = await usersCollection.findOne(
       { _id: new ObjectId(userId) },
-      { projection: { _id: 1, enrolledCourses: 1 } }
+      { projection: { _id: 1, enrolledCourses: 1 } },
     );
     if (result?.enrolledCourses) {
       return res.status(200).json({
@@ -1260,7 +1260,13 @@ router.get("/resources", async (req, res) => {
     const subType = query.subType || "";
     const sortOrder = sort === "newest" ? -1 : 1;
     if (subType !== "all" && subType) {
-      matchStage.videoLang = subType;
+      if (subType === "others") {
+        matchStage.videoLang = {
+          $nin: ["bangla", "english", "arabic", "urdu"],
+        };
+      } else {
+        matchStage.videoLang = subType;
+      }
     }
     // console.log(limit)
     if (keyword) {
@@ -1313,7 +1319,7 @@ router.get("/resources", async (req, res) => {
         ])
         .toArray();
     }
-const totalCount = await resourceCollection.countDocuments(matchStage)
+    const totalCount = await resourceCollection.countDocuments(matchStage);
     return res.status(200).json({
       message: "Success",
       status: 200,
