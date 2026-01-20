@@ -473,59 +473,18 @@ router.get("/all-blog-tags", async (req, res) => {
     });
   }
 });
-router.get("/available-appointment-dates", async (req, res) => {
-  try {
-    const dates = await scheduleCollection.find({}).toArray();
-    if (!dates) {
-      return res.status(404).json({
-        message: "No dates available",
-        status: 404,
-      });
-    }
-
-    return res.status(200).json({
-      message: "Dates available.",
-      dates,
-      status: 200,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: "Server error",
-      status: 500,
-      error: error.message,
-    });
-  }
-});
 
 router.post("/book-appointment", async (req, res) => {
   try {
     const bookingData = req.body;
     const { date, time } = bookingData;
-    const isAvailable = await scheduleCollection.findOne(
-      { date: date },
-      { projection: { _id: 1 } },
-    );
-    if (!isAvailable) {
-      return res.status(400).json({
-        message:
-          "Selected Dates and times not available. Please reload and try again.",
-        status: 400,
-      });
-    }
+
     const modifiedBookingData = bookingData;
     modifiedBookingData.bookedDate = convertDateToDateObject(bookingData.date);
     modifiedBookingData.bookingDate = new Date();
 
     const result = await appointmentCollection.insertOne(modifiedBookingData);
     if (result.insertedId) {
-      await scheduleCollection.updateMany(
-        { date: date },
-        { $pull: { times: time } },
-      );
-      await scheduleCollection.deleteMany({
-        date,
-        times: { $size: 0 },
-      });
       await sendAdminBookingConfirmationEmail(bookingData, transporter);
       return res.status(200).json({
         message: "Booked successfully.",
@@ -1261,7 +1220,7 @@ router.get("/resources", async (req, res) => {
     const sortOrder = sort === "newest" ? -1 : 1;
 
     if (subType !== "all" && subType) {
-        matchStage.topic = subType;
+      matchStage.topic = subType;
     }
 
     if (keyword) {
@@ -1316,32 +1275,31 @@ router.get("/resources", async (req, res) => {
     }
     const totalCount = await resourceCollection.countDocuments(matchStage);
     let videoTopics;
-
- if (type === "video") {
-  videoTopics = await resourceCollection
-    .aggregate([
-      {
-        $match: { type: "video" },
-      },
-      {
-        $group: {
-          _id: "$topic",
-          count: { $sum: 1 },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          topic: "$_id",
-          count: 1,
-        },
-      },
-      {
-        $sort: { topic: 1 },
-      },
-    ])
-    .toArray();
-}
+    if (type === "video") {
+      videoTopics = await resourceCollection
+        .aggregate([
+          {
+            $match: { type: "video" },
+          },
+          {
+            $group: {
+              _id: "$topic",
+              count: { $sum: 1 },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              topic: "$_id",
+              count: 1,
+            },
+          },
+          {
+            $sort: { topic: 1 },
+          },
+        ])
+        .toArray();
+    }
 
     return res.status(200).json({
       message: "Success",

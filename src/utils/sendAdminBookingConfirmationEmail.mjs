@@ -74,10 +74,9 @@ const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
                           bookingData?.service
                         }</li>
                         <li><strong>Date:</strong> ${bookingData?.date}</li>
-                        <li><strong>Time:</strong> ${convertTo12HourFormat(
-                          bookingData?.time
-                        )}</li>
-                         <li><strong>Consultant:</strong> ${bookingData?.consultant || "any"}</li>
+                        <li><strong>Time:</strong> ${bookingData?.time}</li>
+                         <li><strong>Consultant:</strong> ${bookingData?.consultant || "N/A"}</li>
+                         <li><strong>Reference:</strong> ${bookingData?.reference || "N/A"}</li>
                         <li><strong>Problem:</strong> ${
                           bookingData?.problem
                         }</li>
@@ -97,9 +96,9 @@ const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
 
   // Define email options
   let mailOptions = {
-    to: "sukunlifebd@gmail.com", // Admin email address
+    to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
     subject: "New Appointment - SukunLife",
-    html: generateEmailHTML(bookingData), // Dynamically generated HTML
+    html: generateEmailHTML(bookingData),
   };
 
   try {
