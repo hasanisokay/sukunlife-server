@@ -892,20 +892,20 @@ router.get("/check-voucher", async (req, res) => {
       const expiryDate = new Date(voucher.expiryDate);
 
       if (currentDate > expiryDate) {
-        return res.status(400).json({
+        return res.status(422).json({
           message: "Voucher has expired.",
           isValid: false,
-          status: 400,
+          status: 422,
         });
       }
     }
 
     // Check if the totalPrice meets the minimum order limit
     if (totalPrice < parseFloat(voucher.minOrderLimit)) {
-      return res.status(400).json({
+      return res.status(422).json({
         message: `Total price must be at least ${voucher.minOrderLimit} to apply this voucher.`,
         isValid: false,
-        status: 400,
+        status: 422,
       });
     }
 
