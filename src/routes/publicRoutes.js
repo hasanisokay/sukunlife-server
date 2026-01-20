@@ -1259,16 +1259,11 @@ router.get("/resources", async (req, res) => {
     const sort = query.sort || "newest";
     const subType = query.subType || "";
     const sortOrder = sort === "newest" ? -1 : 1;
+
     if (subType !== "all" && subType) {
-      if (subType === "others") {
-        matchStage.videoLang = {
-          $nin: ["bangla", "english", "arabic", "urdu"],
-        };
-      } else {
-        matchStage.videoLang = subType;
-      }
+        matchStage.topic = subType;
     }
-    // console.log(limit)
+
     if (keyword) {
       matchStage.$or = [
         { title: { $regex: keyword, $options: "i" } },
@@ -1320,10 +1315,17 @@ router.get("/resources", async (req, res) => {
         .toArray();
     }
     const totalCount = await resourceCollection.countDocuments(matchStage);
+    let videoTopics;
+    if (type === "video") {
+      videoTopics = await resourceCollection.distinct("topics", {
+        type: "video",
+      });
+    }
     return res.status(200).json({
       message: "Success",
       status: 200,
       totalCount,
+      videoTopics,
       resources,
     });
   } catch (error) {
