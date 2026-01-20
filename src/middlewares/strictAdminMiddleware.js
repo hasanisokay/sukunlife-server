@@ -5,7 +5,7 @@ import dbConnect from "../config/db.mjs";
 import { ObjectId } from "mongodb";
 
 const db = await dbConnect();
-const usersCollection = db.collection("users");
+const usersCollection = db?.collection("users");
 
 const strictAdminMiddleware = async (req, res, next) => {
   // This will check the token and as well as db to ensure the token permission match with db.

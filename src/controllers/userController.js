@@ -9,7 +9,7 @@ export const signup = async (req, res, next) => {
     const { name, email, password } = req.body;
 
     // Check if email already exists
-    const existingUser = await db.collection("users").findOne({ email });
+    const existingUser = await db?.collection("users").findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "Email already exists" });
     }
@@ -18,7 +18,7 @@ export const signup = async (req, res, next) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Create new user
-    const result = await db.collection("users").insertOne({
+    const result = await db?.collection("users").insertOne({
       name,
       email,
       password: hashedPassword,
@@ -38,7 +38,7 @@ export const login = async (req, res, next) => {
     const { email, password } = req.body;
 
     // Check if user exists
-    const user = await db.collection("users").findOne({ email });
+    const user = await db?.collection("users").findOne({ email });
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password" });
     }

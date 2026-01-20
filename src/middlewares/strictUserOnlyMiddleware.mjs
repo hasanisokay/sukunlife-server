@@ -5,7 +5,7 @@ import { ObjectId } from "mongodb";
 import dbConnect from "../config/db.mjs";
 
 const db = await dbConnect();
-const usersCollection = db.collection("users");
+const usersCollection = db?.collection("users");
 
 const strictUserOnlyMiddleware = async (req, res, next) => {
   try {

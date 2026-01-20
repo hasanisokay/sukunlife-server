@@ -12,17 +12,17 @@ import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirma
 const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
-const blogsCollection = db.collection("blogs");
-const scheduleCollection = db.collection("schedules");
-const appointmentCollection = db.collection("appointments");
-const courseCollection = db.collection("courses");
-const shopCollection = db.collection("shop");
-const usersCollection = db.collection("users");
-const voucherCollection = db.collection("vouchers");
-const orderCollection = db.collection("orders");
-const resourceCollection = db.collection("resources");
+const blogsCollection = db?.collection("blogs");
+const scheduleCollection = db?.collection("schedules");
+const appointmentCollection = db?.collection("appointments");
+const courseCollection = db?.collection("courses");
+const shopCollection = db?.collection("shop");
+const usersCollection = db?.collection("users");
+const voucherCollection = db?.collection("vouchers");
+const orderCollection = db?.collection("orders");
+const resourceCollection = db?.collection("resources");
 
-const appointmentReviewCollection = db.collection("appointment-reviews");
+const appointmentReviewCollection = db?.collection("appointment-reviews");
 
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -1316,11 +1316,33 @@ router.get("/resources", async (req, res) => {
     }
     const totalCount = await resourceCollection.countDocuments(matchStage);
     let videoTopics;
-    if (type === "video") {
-      videoTopics = await resourceCollection.distinct("topics", {
-        type: "video",
-      });
-    }
+
+ if (type === "video") {
+  videoTopics = await resourceCollection
+    .aggregate([
+      {
+        $match: { type: "video" },
+      },
+      {
+        $group: {
+          _id: "$topic",
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          topic: "$_id",
+          count: 1,
+        },
+      },
+      {
+        $sort: { topic: 1 },
+      },
+    ])
+    .toArray();
+}
+
     return res.status(200).json({
       message: "Success",
       status: 200,

@@ -7,18 +7,18 @@ import convertToDhakaTime from "../utils/convertToDhakaTime.mjs";
 
 const router = express.Router();
 const db = await dbConnect();
-const blogsCollection = db.collection("blogs");
-const usersCollection = db.collection("users");
-const scheduleCollection = db.collection("schedules");
-const appointmentCollection = db.collection("appointments");
-const courseCollection = db.collection("courses");
-const shopCollection = db.collection("shop");
-const voucherCollection = db.collection("vouchers");
-const orderCollection = db.collection("orders");
-const resourceCollection = db.collection("resources");
-const noteCollection = db.collection("notes");
+const blogsCollection = db?.collection("blogs");
+const usersCollection = db?.collection("users");
+const scheduleCollection = db?.collection("schedules");
+const appointmentCollection = db?.collection("appointments");
+const courseCollection = db?.collection("courses");
+const shopCollection = db?.collection("shop");
+const voucherCollection = db?.collection("vouchers");
+const orderCollection = db?.collection("orders");
+const resourceCollection = db?.collection("resources");
+const noteCollection = db?.collection("notes");
 
-const appointmentReviewCollection = db.collection("appointment-reviews");
+const appointmentReviewCollection = db?.collection("appointment-reviews");
 router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
   try {
     const query = req.query;

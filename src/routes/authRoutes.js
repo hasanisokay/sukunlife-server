@@ -24,9 +24,9 @@ import {
 import sendOtpEmailToUser from "../utils/sendOtpEmailToUser.mjs";
 
 dotenv.config();
-const usersCollection = db.collection("users");
-const otpCollection = db.collection("otps");
-const sessionsCollection = db.collection("sessions");
+const usersCollection = db?.collection("users");
+const otpCollection = db?.collection("otps");
+const sessionsCollection = db?.collection("sessions");
 
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,

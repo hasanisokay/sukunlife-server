@@ -16,15 +16,15 @@ const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
 
-const blogsCollection = db.collection("blogs");
-const scheduleCollection = db.collection("schedules");
-const appointmentCollection = db.collection("appointments");
-const courseCollection = db.collection("courses");
-const shopCollection = db.collection("shop");
-const usersCollection = db.collection("users");
-const voucherCollection = db.collection("vouchers");
-const orderCollection = db.collection("orders");
-const appointmentReviewCollection = db.collection("appointment-reviews");
+const blogsCollection = db?.collection("blogs");
+const scheduleCollection = db?.collection("schedules");
+const appointmentCollection = db?.collection("appointments");
+const courseCollection = db?.collection("courses");
+const shopCollection = db?.collection("shop");
+const usersCollection = db?.collection("users");
+const voucherCollection = db?.collection("vouchers");
+const orderCollection = db?.collection("orders");
+const appointmentReviewCollection = db?.collection("appointment-reviews");
 
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
