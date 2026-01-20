@@ -1378,4 +1378,50 @@ router.get("/top-reviews", async (req, res) => {
   }
 });
 
+
+// payments
+
+router.post("/initiate-payment", async (req, res) => {
+  const {
+    invoice,
+    name,
+    mobile,
+    address,
+    reference
+  } = req.body;
+
+  const payload = {
+    merchantId: process.env.PAYSTATION_MERCHANT_ID,
+    password: process.env.PAYSTATION_PASSWORD,
+    invoice_number: invoice,
+    currency: "BDT",
+    payment_amount: 500,
+    pay_with_charge: 1,
+    reference: reference || "Appointment Booking",
+    cust_name: name,
+    cust_phone: mobile,
+    cust_email: "noemail@sukunlife.com",
+    cust_address: address,
+    callback_url: `${process.env.CLIENT_URL}/api/paystation/callback`
+  };
+
+  try {
+    const response = await fetch(
+      "https://api.paystation.com.bd/initiate-payment",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    const data = await response.json();
+    res.json(data);
+
+  } catch (err) {
+    res.status(500).json({ message: "Payment initiation failed" });
+  }
+});
+
+
 export default router;
