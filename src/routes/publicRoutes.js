@@ -13,7 +13,6 @@ const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
 const blogsCollection = db?.collection("blogs");
-const scheduleCollection = db?.collection("schedules");
 const appointmentCollection = db?.collection("appointments");
 const courseCollection = db?.collection("courses");
 const shopCollection = db?.collection("shop");
@@ -26,8 +25,8 @@ const appointmentReviewCollection = db?.collection("appointment-reviews");
 
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_SERVICE_HOST,
-  secure: true,
+  port: Number(process.env.EMAIL_SERVICE_HOST),
+   secure: false, // true for 465, false for 587
   auth: {
     user: process.env.EMAIL_ID,
     pass: process.env.EMAIL_PASS,
@@ -477,16 +476,15 @@ router.get("/all-blog-tags", async (req, res) => {
 router.post("/book-appointment", async (req, res) => {
   try {
     const bookingData = req.body;
-    const { date, time } = bookingData;
-
     const modifiedBookingData = bookingData;
     modifiedBookingData.bookedDate = convertDateToDateObject(bookingData.date);
     modifiedBookingData.bookingDate = new Date();
 
     const result = await appointmentCollection.insertOne(modifiedBookingData);
-    if (result.insertedId) {
-      await sendAdminBookingConfirmationEmail(bookingData, transporter);
-      return res.status(200).json({
+    if (result?.insertedId) {
+    const emailS=  await sendAdminBookingConfirmationEmail(bookingData, transporter);
+    console.log(emailS)  
+    return res.status(200).json({
         message: "Booked successfully.",
         result,
         status: 200,

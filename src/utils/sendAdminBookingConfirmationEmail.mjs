@@ -1,5 +1,5 @@
-import convertTo12HourFormat from "../utils/convertTo12HourFormat.mjs";
 const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
+    console.log(bookingData)
   const generateEmailHTML = (bookingData) => `
   <!DOCTYPE html>
   <html lang="en">
@@ -67,6 +67,7 @@ const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
                         <li><strong>Phone Number:</strong> ${
                           bookingData.mobile
                         }</li>
+                        <li><strong>Email:</strong> ${bookingData.email}</li>
                         <li><strong>Address:</strong> ${
                           bookingData.address
                         }</li>
@@ -82,7 +83,7 @@ const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
                         }</li>
                         <li><strong>Advance Payment:</strong>${
                           bookingData?.advancePayment
-                            ? `Trx Id: ${bookingData?.transactionNumber}`
+                            ? `Trx Id: ${bookingData?.trx_id}`
                             : bookingData?.advancePayment
                         }</li>
                     </ul>
@@ -96,7 +97,9 @@ const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
 
   // Define email options
   let mailOptions = {
-    to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
+    from: '"SukunLife" <no-reply@sukunlife.com>',
+    // to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
+    to: "devhasanvibes@gmail.com, hasanisokay@gmail.com",
     subject: "New Appointment - SukunLife",
     html: generateEmailHTML(bookingData),
   };
