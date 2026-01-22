@@ -111,184 +111,157 @@ router.post("/initiate", async (req, res) => {
   }
 });
 
-router.get("/callback", async (req, res) => {
+router.get("/callback", (req, res) => {
   const { status, invoice_number, message } = req.query;
 
-  const payment = await paymentCollection.findOne({ invoice: invoice_number });
-  if (!payment) {
+  if (status !== "Successful") {
     return res.redirect(
-      `${process.env.CLIENT_URL}/payment-failed?message=Invalid invoice`,
+      `${CLIENT_URL}/payment-failed?invoice=${invoice_number}`,
     );
   }
 
-  // Failed at gateway
-  if (status?.toLowerCase() !== "successful") {
-    await paymentCollection.updateOne(
-      { invoice: invoice_number },
-      { $set: { status: "failed" } },
-    );
-
-    return res.redirect(
-      `${process.env.CLIENT_URL}/payment-failed?invoice=${invoice_number}&message=${encodeURIComponent(
-        message || "Payment failed",
-      )}`,
-    );
-  }
-
-  // ✅ Mark paid immediately (FAST)
-  await paymentCollection.updateOne(
-    { invoice: invoice_number },
-    {
-      $set: {
-        status: "paid",
-        paidAt: new Date(),
-        trx_id: req.query.trx_id,
-      },
-    },
-  );
-
-  // 🔁 Fire-and-forget async processing
-  process.nextTick(() => {
-    finalizePayment(invoice_number).catch(console.error);
-  });
-
-  // ⚡ IMMEDIATE redirect
   return res.redirect(
-    `${CLIENT_URL}/payment-success?invoice=${invoice_number}&source=${payment.source}`,
+    `${CLIENT_URL}/payment-success?invoice=${invoice_number}`,
   );
 });
 
-async function finalizePayment(invoice) {
-  const verification = await verifyPayment(invoice);
-
-  if (verification?.status !== "success") {
-    await paymentCollection.updateOne(
-      { invoice },
-      { $set: { status: "failed" } },
-    );
-    return;
-  }
-
-  await paymentCollection.updateOne(
-    { invoice },
-    {
-      $set: {
-        payment_method: verification.data.payment_method,
-        raw_response: verification,
-      },
-    },
-  );
-
-  if (payment.source === "appointment") {
-    await createAppointment(payment);
-  }
-
-  if (payment.source === "shop") {
-    await createOrder(payment);
-  }
-
-  // 📧 Emails happen here (safe now)
-  const dataForEmail = {
-    ...payment,
-    trx_id: verification?.data?.trx_id,
-    payment_method: verification?.data?.payment_method,
-  };
-  await sendAdminBookingConfirmationEmail(dataForEmail, transporter);
-}
-
-// router.get("/callback", async (req, res) => {
-//   const { status, invoice_number, message } = req.query;
-
-//   const payment = await paymentCollection.findOne({
-//     invoice: invoice_number,
-//   });
-//   if (!payment) {
-//     return res.redirect(
-//       `${process.env.CLIENT_URL}/payment-failed?message=Invalid invoice`,
-//     );
-//   }
-
-//   // Failed at PayStation
-//   if (status?.toLowerCase() !== "successful") {
-//     await paymentCollection.updateOne(
-//       { invoice: invoice_number },
-//       { $set: { status: "failed" } },
-//     );
-
-//     return res.redirect(
-//       `${process.env.CLIENT_URL}/payment-failed?invoice=${invoice_number}&message=${encodeURIComponent(
-//         message || "Payment failed",
-//       )}`,
-//     );
-//   }
-
+// router.get("/verify-payment", async (req, res) => {
 //   try {
+//     const { invoice_number } = req.query;
+
+//     if (!invoice_number) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "invoice_number is required",
+//       });
+//     }
 //     const verification = await verifyPayment(invoice_number);
 //     const v = verification?.data;
-//     console.log({ verification });
-
 //     if (
-//       verification?.status?.toLowerCase() !== "success" ||
-//       v?.trx_status?.toLowerCase() !== "successful" ||
-//       Number(v?.request_amount) !== payment.amount
+//       verification?.status?.toLowerCase() === "success" ||
+//       v?.trx_status?.toLowerCase() === "successful"
 //     ) {
 //       await paymentCollection.updateOne(
 //         { invoice: invoice_number },
-//         { $set: { status: "failed" } },
-//       );
-
-//       return res.redirect(
-//         `${process.env.CLIENT_URL}/payment-failed?invoice=${invoice_number}&message=${encodeURIComponent(
-//           "Payment verification failed",
-//         )}`,
-//       );
-//     }
-
-//     //  Mark paid
-//     await paymentCollection.updateOne(
-//       { invoice: invoice_number },
-//       {
-//         $set: {
-//           status: "paid",
-//           trx_id: v.trx_id,
-//           paidAt: new Date(),
-//           raw_response: verification,
+//         {
+//           $set: {
+//             status: "paid",
+//             trx_id: v.trx_id,
+//             payment_method: v?.payment_method,
+//             paidAt: new Date(),
+//             raw_response: verification,
+//           },
 //         },
-//       },
-//     );
-
-//     // Fulfillment
-//     switch (payment.source) {
-//       case "appointment":
-//         await createAppointment(payment);
-//         break;
-
-//       case "shop":
-//         await createOrder(payment);
-//         break;
-
-//       default:
-//         throw new Error("Unknown payment source");
+//       );
 //     }
-//     try {
-//       const dataForEmail = {
-//         ...payment,
-//         trx_id: verification?.data?.trx_id,
-//         payment_method: verification?.data?.payment_method,
-//       };
-//       await sendUserPaymentConfirmationEmail(dataForEmail, transporter);
-//     } catch (err) {
-//       console.error("User confirmation email failed:", err);
+//     return res.status(200).json(verification);
+//   } catch (error) {
+//     console.error("Verify payment error:", error);
+
+//     if (error.name === "AbortError") {
+//       return res.status(408).json({
+//         success: false,
+//         message: "Payment verification timed out",
+//       });
 //     }
-//     return res.redirect(
-//       `${process.env.CLIENT_URL}/payment-success?invoice=${invoice_number}&source=${payment.source}`,
-//     );
-//   } catch (err) {
-//     return res.redirect(
-//       `${process.env.CLIENT_URL}/payment-failed?invoice=${invoice_number}&message=Server error`,
-//     );
+
+//     return res.status(500).json({
+//       success: false,
+//       message: "Failed to verify payment",
+//     });
 //   }
 // });
+
+async function verifyPayment(invoice_number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(`${PAYSTATION_URL}/transaction-status`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        merchantId: process.env.PAYSTATION_MERCHANT_ID,
+      },
+      body: JSON.stringify({ invoice_number }),
+      signal: controller.signal,
+    });
+
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+router.post("/finalize-payment", async (req, res) => {
+  try {
+    const { invoice_number } = req.body;
+
+    const payment = await paymentCollection.findOne({
+      invoice: invoice_number,
+    });
+
+    if (!payment) {
+      return res.status(404).json({ message: "Invalid invoice" });
+    }
+
+    // 🔁 Idempotency guard
+    if (payment.fulfilled) {
+      return res.status(200).json({ alreadyProcessed: true });
+    }
+
+    // 🔐 Verify with PayStation
+    const verification = await verifyPayment(invoice_number);
+    const v = verification?.data;
+
+    if (
+      verification?.status?.toLowerCase() !== "success" ||
+      v?.trx_status?.toLowerCase() !== "successful"
+    ) {
+      await paymentCollection.updateOne(
+        { invoice: invoice_number },
+        { $set: { status: "failed" } },
+      );
+      return res.status(400).json({ message: "Verification failed" });
+    }
+
+    // 💰 Mark paid
+    await paymentCollection.updateOne(
+      { invoice: invoice_number },
+      {
+        $set: {
+          status: "paid",
+          trx_id: v.trx_id,
+          payment_method: v.payment_method,
+          paidAt: new Date(),
+          raw_response: verification,
+        },
+      },
+    );
+
+    // 📦 Fulfillment
+    if (payment.source === "appointment") {
+      await createAppointment(payment);
+    }
+
+    if (payment.source === "shop") {
+      await createOrder(payment);
+    }
+
+    // 📧 Email
+    await sendUserPaymentConfirmationEmail(payment, transporter);
+
+    // ✅ Mark fulfilled
+    await paymentCollection.updateOne(
+      { invoice: invoice_number },
+      { $set: { fulfilled: true, fulfilledAt: new Date() } },
+    );
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Finalize payment error:", error);
+    return res.status(500).json({ message: "Finalize failed" });
+  }
+});
 
 async function verifyPayment(invoice_number) {
   const controller = new AbortController();
@@ -382,15 +355,25 @@ async function sendUserPaymentConfirmationEmail(payment, transporter) {
       ? "Your Appointment is Confirmed"
       : "Your Order is Confirmed";
 
+  const safe = (v = "") =>
+    String(v).replace(/[&<>"']/g, s => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[s]));
+
   const html = `
     <h2>Payment Successful</h2>
-    <p>Thank you, ${payment.customer.name}.</p>
+
+    <p>Thank you, ${safe(payment.customer.name)}.</p>
     <p>Your payment has been successfully received.</p>
 
     <p><strong>Invoice:</strong> ${payment.invoice}</p>
     <p><strong>Amount:</strong> ${payment.amount} BDT</p>
-    <p><strong>Payment Method:</strong> ${payment?.payment_method}</p>
-    <p><strong>TrxId:</strong> ${payment?.trx_id}</p>
+    <p><strong>Payment Method:</strong> ${payment.payment_method}</p>
+    <p><strong>Transaction ID:</strong> ${payment.trx_id}</p>
 
     <hr />
 
@@ -400,15 +383,29 @@ async function sendUserPaymentConfirmationEmail(payment, transporter) {
         : `<p>Your order is now being processed.</p>`
     }
 
+    <p>
+      <a href="${process.env.CLIENT_URL}/payment-success?invoice=${payment.invoice}">
+        View / Print Invoice
+      </a>
+    </p>
+
     <p>You can keep this email for your records.</p>
   `;
 
-  await transporter.sendMail({
-    from: `"SukunLife" <${process.env.EMAIL_ID}>`,
-    to: payment?.customer?.email,
-    subject,
-    html,
-  });
+  try {
+    await transporter.sendMail({
+      from: `"SukunLife" <${process.env.EMAIL_ID}>`,
+      to: payment.customer.email,
+      subject,
+      html,
+      text: `Payment successful.
+Invoice: ${payment.invoice}
+Amount: ${payment.amount} BDT`,
+    });
+  } catch (err) {
+    console.error("User confirmation email failed:", err);
+  }
 }
+
 
 export default router;
