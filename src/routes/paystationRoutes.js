@@ -249,6 +249,10 @@ router.post("/finalize-payment", async (req, res) => {
         paidAmount: payment.amount,
         status: "confirmed",
         bookingDate: new Date(),
+        paymentStatus: "paid",
+        bookedDate: convertDateToDateObject(payment?.payload?.date),
+        bookingDate: new Date(),
+        createdAt: new Date(),
       });
     }
 
