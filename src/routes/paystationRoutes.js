@@ -199,11 +199,24 @@ router.post("/finalize-payment", async (req, res) => {
 
     const payment = await paymentCollection.findOne({
       invoice: invoice_number,
-      status: "pending",
     });
 
     if (!payment) {
       return res.status(404).json({ message: "Invalid invoice" });
+    }
+    if (payment.status === "paid") {
+      return res
+        .status(200)
+        .json({
+          message: "Processed already",
+          paymentOk: true,
+          alreadyProcessed: true,
+        });
+    }
+    if (payment.status === "failed") {
+      return res
+        .status(400)
+        .json({ message: "Failed payment.", paymentOk: false });
     }
 
     // 🔁 Idempotency guard
