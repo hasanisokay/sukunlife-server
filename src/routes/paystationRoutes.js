@@ -263,26 +263,7 @@ router.post("/finalize-payment", async (req, res) => {
   }
 });
 
-async function verifyPayment(invoice_number) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
 
-  try {
-    const response = await fetch(`${PAYSTATION_URL}/transaction-status`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        merchantId: process.env.PAYSTATION_MERCHANT_ID,
-      },
-      body: JSON.stringify({ invoice_number }),
-      signal: controller.signal,
-    });
-
-    return await response.json();
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 const createOrder = async (data) => {};
 const createAppointment = async (payment) => {
   try {
