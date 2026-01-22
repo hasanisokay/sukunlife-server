@@ -199,6 +199,7 @@ router.post("/finalize-payment", async (req, res) => {
 
     const payment = await paymentCollection.findOne({
       invoice: invoice_number,
+      status: "pending",
     });
 
     if (!payment) {
@@ -206,7 +207,7 @@ router.post("/finalize-payment", async (req, res) => {
     }
 
     // 🔁 Idempotency guard
-    if (payment.fulfilled) {
+    if (payment?.fulfilled) {
       return res.status(200).json({ alreadyProcessed: true });
     }
 
@@ -238,24 +239,30 @@ router.post("/finalize-payment", async (req, res) => {
         },
       },
     );
-
-    // 📦 Fulfillment
     if (payment.source === "appointment") {
-      await createAppointment(payment);
+      await appointmentCollection.insertOne({
+        ...payment.payload,
+        invoice: payment.invoice,
+        paymentId: payment._id,
+        paymentMethod: v.payment_method,
+        trx_id: v.trx_id,
+        paidAmount: payment.amount,
+        status: "confirmed",
+        bookingDate: new Date(),
+      });
     }
 
-    if (payment.source === "shop") {
-      await createOrder(payment);
-    }
-
-    // 📧 Email
-    await sendUserPaymentConfirmationEmail(payment, transporter);
-
-    // ✅ Mark fulfilled
-    await paymentCollection.updateOne(
-      { invoice: invoice_number },
-      { $set: { fulfilled: true, fulfilledAt: new Date() } },
-    );
+    // if (payment.source === "appointment") {
+    //   await createAppointment(payment);
+    // }
+    // if (payment.source === "shop") {
+    //   await createOrder(payment);
+    // }
+    // await sendUserPaymentConfirmationEmail(payment, transporter);
+    // await paymentCollection.updateOne(
+    //   { invoice: invoice_number },
+    //   { $set: { fulfilled: true, fulfilledAt: new Date() } },
+    // );
 
     return res.status(200).json({ success: true });
   } catch (error) {
@@ -263,7 +270,6 @@ router.post("/finalize-payment", async (req, res) => {
     return res.status(500).json({ message: "Finalize failed" });
   }
 });
-
 
 const createOrder = async (data) => {};
 const createAppointment = async (payment) => {
@@ -338,13 +344,17 @@ async function sendUserPaymentConfirmationEmail(payment, transporter) {
       : "Your Order is Confirmed";
 
   const safe = (v = "") =>
-    String(v).replace(/[&<>"']/g, s => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    }[s]));
+    String(v).replace(
+      /[&<>"']/g,
+      (s) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[s],
+    );
 
   const html = `
     <h2>Payment Successful</h2>
@@ -388,6 +398,5 @@ Amount: ${payment.amount} BDT`,
     console.error("User confirmation email failed:", err);
   }
 }
-
 
 export default router;
