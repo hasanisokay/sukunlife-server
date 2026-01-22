@@ -15,6 +15,7 @@ const paymentCollection = db?.collection("payments");
 
 const appointmentCollection = db?.collection("appointments");
 
+const CLIENT_URL = process.env.CLIENT_URL;
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: process.env.EMAIL_SERVICE_HOST,
