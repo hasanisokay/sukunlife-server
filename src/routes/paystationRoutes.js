@@ -63,7 +63,7 @@ router.post("/initiate", async (req, res) => {
   let amount = 0;
   let orderPayload = {};
   if (source === "appointment") {
-    amount = 20;
+    amount = 500;
     orderPayload = {
       ...req.body,
     };
