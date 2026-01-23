@@ -20,7 +20,6 @@ const lowUserOnlyMiddleware = (req, res, next) => {
       console.error(e);
       req.user = null;
     }
-    console.log(decoded)
     if (decoded?.user) {
       req.user = decoded?.user;
       next();

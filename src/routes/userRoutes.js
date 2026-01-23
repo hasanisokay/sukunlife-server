@@ -406,5 +406,9 @@ router.post("/submit-review", async (req, res) => {
   }
 });
 
+router.post("/upload/image", strictUserOnlyMiddleware, uploadImage.single("image"), (req, res) => {
+  const url = `https://cdn.sukunlife.com/images/${req.file.filename}`;
+  res.json({ url });
+});
 
 export default router;
