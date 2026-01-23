@@ -43,7 +43,7 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 app.get('/', (req, res) => {
-  res.send('Server Is Running!');
+  res.send('Sukunlife server is running!');
 });
 
 // View engine setup

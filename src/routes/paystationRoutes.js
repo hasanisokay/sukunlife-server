@@ -269,17 +269,17 @@ router.post("/finalize-payment", async (req, res) => {
       });
     }
 
-    // if (payment.source === "appointment") {
-    //   await createAppointment(payment);
-    // }
-    // if (payment.source === "shop") {
-    //   await createOrder(payment);
-    // }
-    // await sendUserPaymentConfirmationEmail(payment, transporter);
-    // await paymentCollection.updateOne(
-    //   { invoice: invoice_number },
-    //   { $set: { fulfilled: true, fulfilledAt: new Date() } },
-    // );
+    if (payment.source === "appointment") {
+      await createAppointment(payment);
+    }
+    if (payment.source === "shop") {
+      await createOrder(payment);
+    }
+    await sendUserPaymentConfirmationEmail(payment, transporter);
+    await paymentCollection.updateOne(
+      { invoice: invoice_number },
+      { $set: { fulfilled: true, fulfilledAt: new Date() } },
+    );
 
     return res.status(200).json({ success: true });
   } catch (error) {
