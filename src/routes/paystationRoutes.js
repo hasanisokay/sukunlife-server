@@ -205,13 +205,11 @@ router.post("/finalize-payment", async (req, res) => {
       return res.status(404).json({ message: "Invalid invoice" });
     }
     if (payment.status === "paid") {
-      return res
-        .status(200)
-        .json({
-          message: "Processed already",
-          paymentOk: true,
-          alreadyProcessed: true,
-        });
+      return res.status(200).json({
+        message: "Processed already",
+        paymentOk: true,
+        alreadyProcessed: true,
+      });
     }
     if (payment.status === "failed") {
       return res
@@ -275,7 +273,12 @@ router.post("/finalize-payment", async (req, res) => {
     if (payment.source === "shop") {
       await createOrder(payment);
     }
-    await sendUserPaymentConfirmationEmail(payment, transporter);
+    const emailSendingDetails = {
+      ...payment,
+      trx_id: v.trx_id,
+      payment_method: v.payment_method,
+    };
+    await sendUserPaymentConfirmationEmail(emailSendingDetails, transporter);
     await paymentCollection.updateOne(
       { invoice: invoice_number },
       { $set: { fulfilled: true, fulfilledAt: new Date() } },
