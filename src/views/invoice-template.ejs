@@ -228,34 +228,75 @@
             <th>Amount</th>
           </tr>
         </thead>
-        <tbody>
-          <tr>
-            <td>
-              <%= payment.source === "appointment" ? "Appointment Booking" :
-              "Order Payment" %>
-            </td>
-            <td><%= payment.amount %> BDT</td>
-          </tr>
-        </tbody>
+<tbody>
+  <% if (payment.source === "appointment") { %>
+    <tr>
+      <td>Appointment Booking</td>
+      <td><%= payment.amount %> BDT</td>
+    </tr>
+  <% } %>
+
+  <% if (payment.source === "shop" && order) { %>
+    <% order.items.forEach(function(item) { %>
+      <tr>
+        <td>
+          <strong><%= item.title %></strong><br/>
+          Qty: <%= item.quantity %><%= item.unit ? " " + item.unit : "" %>
+          <% if (item.variant) { %>
+            <br/>
+            <small>
+              <% if (item.variant.size) { %>
+                Size: <%= item.variant.size %>
+              <% } %>
+              <% if (item.variant.color) { %>
+                , Color: <%= item.variant.color %>
+              <% } %>
+            </small>
+          <% } %>
+        </td>
+        <td>
+          <%= item.price * item.quantity %> BDT
+        </td>
+      </tr>
+    <% }) %>
+  <% } %>
+</tbody>
+
       </table>
 
       <!-- Total -->
-      <div class="total">
-        <div class="total-box">
-          <div class="total-row">
-            <span>Subtotal</span>
-            <span><%= payment.amount %> BDT</span>
-          </div>
-          <div class="total-row">
-            <span>Paid</span>
-            <span><%= payment.amount %> BDT</span>
-          </div>
-          <div class="total-row final">
-            <span>Total</span>
-            <span><%= payment.amount %> BDT</span>
-          </div>
-        </div>
+<div class="total">
+  <div class="total-box">
+    <% if (payment.source === "shop" && order) { %>
+
+      <div class="total-row">
+        <span>Subtotal</span>
+        <span>
+          <%= order.items.reduce((sum, i) => sum + i.price * i.quantity, 0) %> BDT
+        </span>
       </div>
+
+      <% if (order.voucher) { %>
+        <div class="total-row">
+          <span>Discount</span>
+          <span>-<%= order.voucher.discount %> BDT</span>
+        </div>
+      <% } %>
+
+      <div class="total-row">
+        <span>Delivery</span>
+        <span><%= order.deliveryCharge %> BDT</span>
+      </div>
+
+    <% } %>
+
+    <div class="total-row final">
+      <span>Total Paid</span>
+      <span><%= payment.amount %> BDT</span>
+    </div>
+  </div>
+</div>
+
 
       <!-- Footer -->
       <div class="footer">

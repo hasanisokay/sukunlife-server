@@ -440,21 +440,16 @@ router.get("/invoice/:invoice", userCheckerMiddleware, async (req, res) => {
       return res.status(404).send("Invoice not found");
     }
 
-    if (payment.loggedInUser?._id) {
-      if (!req.user) {
-        return res.status(403).send("Login required to view invoice");
-      }
+    let order = null;
 
-      if (payment.loggedInUser._id.toString() !== req.user._id.toString()) {
-        return res.status(403).send("Unauthorized");
-      }
+    if (payment.source === "shop") {
+      order = await orderCollection.findOne({ invoice });
     }
-    if (payment.loggedInUser?._id) {
-      return res.status(403).send("Unauthorized");
-    }
+
     res.setHeader("Content-Type", "text/html");
     res.render("invoice-template", {
       payment,
+      order,
       printedAt: new Date(),
     });
   } catch (err) {
@@ -462,6 +457,10 @@ router.get("/invoice/:invoice", userCheckerMiddleware, async (req, res) => {
     res.status(500).send("Failed to load invoice");
   }
 });
+
+
+
+
 const createOrder = async (payment) => {
   const { items, voucher, deliveryCharge } = payment.payload;
 
