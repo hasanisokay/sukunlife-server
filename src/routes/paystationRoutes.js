@@ -393,7 +393,6 @@ async function sendUserPaymentConfirmationEmail(payment, transporter) {
     }
 
     <p>
-    https://api.sukunlife.com/api/paystation/invoice/APT-697306e227b0c4593e84679c
       <a href=${process.env.SERVER_URL}/api/paystation/${payment.invoice}">
         View / Print Invoice
       </a>
