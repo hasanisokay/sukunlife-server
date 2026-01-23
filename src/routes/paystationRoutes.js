@@ -463,13 +463,17 @@ router.get("/invoice/:invoice", userCheckerMiddleware, async (req, res) => {
 
 const createOrder = async (payment) => {
   const { items, voucher, deliveryCharge } = payment.payload;
-
+  const calculatedSubtotal = items.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0,
+  );
   const order = {
     invoice: payment.invoice,
     paymentId: payment._id,
     customer: payment.customer,
     items,
     voucher,
+    subtotal: calculatedSubtotal,
     deliveryCharge,
     totalAmount: payment.amount,
     paymentMethod: payment.payment_method,
@@ -478,7 +482,6 @@ const createOrder = async (payment) => {
     orderedAt: new Date(),
     createdAt: new Date(),
   };
-
   const result = await orderCollection.insertOne(order);
   if (!result.insertedId) {
     throw new Error("Order creation failed");

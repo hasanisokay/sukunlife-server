@@ -236,24 +236,32 @@
     </tr>
   <% } %>
 
-  <% if (payment.source === "shop" && order) { %>
+  <% if (payment.source === "shop" && order && order.items?.length) { %>
     <% order.items.forEach(function(item) { %>
       <tr>
-        <td>
-          <strong><%= item.title %></strong><br/>
-          Qty: <%= item.quantity %><%= item.unit ? " " + item.unit : "" %>
-          <% if (item.variant) { %>
-            <br/>
-            <small>
-              <% if (item.variant.size) { %>
-                Size: <%= item.variant.size %>
-              <% } %>
-              <% if (item.variant.color) { %>
-                , Color: <%= item.variant.color %>
-              <% } %>
-            </small>
-          <% } %>
-        </td>
+<td>
+  <strong><%= item.title %></strong><br/>
+
+  Qty: <%= item.quantity %><%= item.unit ? " " + item.unit : "" %><br/>
+
+ <small>
+  Unit price: <%= item.price %> BDT<%= item.unit ? " / " + item.unit : "" %>
+</small>
+
+
+  <% if (item.variant) { %>
+    <br/>
+    <small>
+      <% if (item.variant.size) { %>
+        Size: <%= item.variant.size %>
+      <% } %>
+      <% if (item.variant.color) { %>
+        , Color: <%= item.variant.color %>
+      <% } %>
+    </small>
+  <% } %>
+</td>
+
         <td>
           <%= item.price * item.quantity %> BDT
         </td>
@@ -267,12 +275,12 @@
       <!-- Total -->
 <div class="total">
   <div class="total-box">
-    <% if (payment.source === "shop" && order) { %>
+    <% if (payment.source === "shop" && order && order.items?.length) { %>
 
       <div class="total-row">
         <span>Subtotal</span>
         <span>
-          <%= order.items.reduce((sum, i) => sum + i.price * i.quantity, 0) %> BDT
+         <%= order.subtotal %> BDT
         </span>
       </div>
 
