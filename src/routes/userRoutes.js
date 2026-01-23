@@ -11,6 +11,7 @@ import sendOrderEmailToUser from "../utils/sendOrderEmailToUser.mjs";
 import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
 import lowUserOnlyMiddleware from "../middlewares/lowUserOnlyMiddleware.js";
 import strictUserOnlyMiddleware from "../middlewares/strictUserOnlyMiddleware.mjs";
+import { uploadImage } from "../middlewares/upload.middleware.js";
 
 const router = express.Router();
 const db = await dbConnect();
