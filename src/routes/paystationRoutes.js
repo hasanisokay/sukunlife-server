@@ -12,8 +12,11 @@ const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
 const paymentCollection = db?.collection("payments");
-
 const appointmentCollection = db?.collection("appointments");
+const courseCollection = db?.collection("courses");
+const shopCollection = db?.collection("shop");
+const voucherCollection = db?.collection("vouchers");
+const orderCollection = db?.collection("orders");
 
 const CLIENT_URL = process.env.CLIENT_URL;
 let transporter = nodemailer.createTransport({
@@ -40,7 +43,16 @@ function getInvoicePrefix(source) {
 }
 
 router.post("/initiate", async (req, res) => {
-  const { name, mobile, address, email, source } = req.body;
+  const {
+    name,
+    mobile,
+    address,
+    email,
+    source,
+    items,
+    voucherCode,
+    deliveryArea,
+  } = req.body;
 
   if (!name || !mobile || !address || !source) {
     return res.status(400).json({ message: "Missing required fields" });
@@ -48,14 +60,105 @@ router.post("/initiate", async (req, res) => {
 
   const prefix = getInvoicePrefix(source);
   const invoice = `${prefix}-${new ObjectId().toString()}`;
+  let amount = 0;
+  let orderPayload = {};
+  if (source === "appointment") {
+    amount = 20;
+    orderPayload = {
+      ...req.body,
+    };
+  } else if (source === "shop") {
+    if (!items.length) {
+      return res.status(400).json({ message: "No items provided" });
+    }
 
-  const amountMap = {
-    appointment: 20,
-    shop: 0,
-    donation: 0,
-  };
+    const orderItems = [];
 
-  const amount = amountMap[source];
+    for (const item of items) {
+      const product = await shopCollection.findOne({
+        _id: new ObjectId(item.productId),
+      });
+
+      if (!product) {
+        return res.status(400).json({ message: "Invalid product" });
+      }
+
+      if (product.stock < item.quantity) {
+        return res.status(400).json({
+          message: `${product.title} is out of stock`,
+        });
+      }
+      let unitPrice = Number(product?.price);
+
+      if (Array.isArray(product?.variantPrices) && item?.variant) {
+        const matchedVariant = product.variantPrices.find((v) => {
+          const sizeMatch = v.size === String(item.variant.size);
+          const colorMatch =
+            !v.color || v.color === "" || v.color === item.variant.color;
+
+          return sizeMatch && colorMatch;
+        });
+
+        if (matchedVariant?.price) {
+          unitPrice = Number(matchedVariant.price);
+        }
+      }
+
+      const itemTotal = unitPrice * item.quantity;
+      amount += itemTotal;
+
+      //       if (isNaN(unitPrice) || unitPrice <= 0) {
+      //   return res.status(400).json({
+      //     message: `Invalid price for ${product.title}`,
+      //   });
+      // }
+
+      orderItems.push({
+        productId: product._id,
+        title: product.title,
+        quantity: item.quantity,
+        price: unitPrice,
+        unit: item.unit || "",
+        variant: item.variant || null,
+      });
+    }
+
+    /* ---------- VOUCHER ---------- */
+    let discount = 0;
+    let voucherData = null;
+
+    if (voucherCode) {
+      const voucher = await voucherCollection.findOne({
+        code: voucherCode,
+        isActive: true,
+      });
+
+      if (voucher) {
+        discount =
+          voucher.type === "percentage"
+            ? Math.floor((amount * voucher.value) / 100)
+            : voucher.value;
+        if (voucher.maxLimit && discount > voucher.maxLimit) {
+          discount = voucher?.maxLimit;
+        }
+        amount -= discount;
+        voucherData = { code: voucher.code, discount };
+      }
+    }
+    let deliveryCharge = 120; // default Outside Dhaka
+
+    if (deliveryArea === "Inside Dhaka") {
+      deliveryCharge = 80;
+    }
+    amount += deliveryCharge;
+
+    orderPayload = {
+      items: orderItems,
+      voucher: voucherData,
+      deliveryCharge,
+    };
+  }
+
   if (!amount) {
     return res.status(400).json({ message: "Invalid payment source" });
   }
@@ -68,7 +171,7 @@ router.post("/initiate", async (req, res) => {
     amount,
     status: "pending",
     customer: { name, mobile, email, address },
-    payload: req.body, // raw data if needed later
+    payload: orderPayload, // raw data if needed later
     createdAt: new Date(),
   });
 
@@ -125,53 +228,6 @@ router.get("/callback", (req, res) => {
     `${CLIENT_URL}/payment-success?invoice=${invoice_number}`,
   );
 });
-
-// router.get("/verify-payment", async (req, res) => {
-//   try {
-//     const { invoice_number } = req.query;
-
-//     if (!invoice_number) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "invoice_number is required",
-//       });
-//     }
-//     const verification = await verifyPayment(invoice_number);
-//     const v = verification?.data;
-//     if (
-//       verification?.status?.toLowerCase() === "success" ||
-//       v?.trx_status?.toLowerCase() === "successful"
-//     ) {
-//       await paymentCollection.updateOne(
-//         { invoice: invoice_number },
-//         {
-//           $set: {
-//             status: "paid",
-//             trx_id: v.trx_id,
-//             payment_method: v?.payment_method,
-//             paidAt: new Date(),
-//             raw_response: verification,
-//           },
-//         },
-//       );
-//     }
-//     return res.status(200).json(verification);
-//   } catch (error) {
-//     console.error("Verify payment error:", error);
-
-//     if (error.name === "AbortError") {
-//       return res.status(408).json({
-//         success: false,
-//         message: "Payment verification timed out",
-//       });
-//     }
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "Failed to verify payment",
-//     });
-//   }
-// });
 
 async function verifyPayment(invoice_number) {
   const controller = new AbortController();
@@ -250,28 +306,14 @@ router.post("/finalize-payment", async (req, res) => {
         },
       },
     );
-    if (payment.source === "appointment") {
-      await appointmentCollection.insertOne({
-        ...payment.payload,
-        invoice: payment.invoice,
-        paymentId: payment._id,
-        paymentMethod: v.payment_method,
-        trx_id: v.trx_id,
-        paidAmount: payment.amount,
-        status: "confirmed",
-        bookingDate: new Date(),
-        paymentStatus: "paid",
-        bookedDate: convertDateToDateObject(payment?.payload?.date),
-        bookingDate: new Date(),
-        createdAt: new Date(),
-      });
-    }
 
     if (payment.source === "appointment") {
-      await createAppointment(payment);
+      await createAppointment(payment, verification);
     }
     if (payment.source === "shop") {
-      await createOrder(payment);
+      const orderResult = await createOrder(payment);
+      await sendAdminOrderNotificationEmail(orderResult.order, transporter);
+      await sendUserOrderInvoiceEmail(orderResult.order, transporter);
     }
     const emailSendingDetails = {
       ...payment,
@@ -291,20 +333,23 @@ router.post("/finalize-payment", async (req, res) => {
   }
 });
 
-const createOrder = async (data) => {};
-const createAppointment = async (payment) => {
+const createAppointment = async (payment, verification) => {
   try {
+    const v = verification?.data;
     const booking = payment.payload;
+
     const appointment = {
       ...booking,
       invoice: payment.invoice,
-      trx_id: payment?.raw_response?.data?.trx_id,
+      paymentId: payment._id,
+      paymentMethod: v.payment_method,
+      trx_id: v.trx_id,
+      paidAmount: payment.amount,
       paymentStatus: "paid",
       bookedDate: convertDateToDateObject(booking.date),
       bookingDate: new Date(),
       createdAt: new Date(),
     };
-
     const result = await appointmentCollection.insertOne(appointment);
 
     if (result.insertedId) {
@@ -320,43 +365,6 @@ const createAppointment = async (payment) => {
     throw error;
   }
 };
-
-router.get("/invoice/:invoice", userCheckerMiddleware, async (req, res) => {
-  try {
-    const invoice = req.params.invoice;
-
-    const payment = await paymentCollection.findOne({
-      invoice,
-      status: "paid",
-    });
-
-    if (!payment) {
-      return res.status(404).send("Invoice not found");
-    }
-
-    if (payment.loggedInUser?._id) {
-      if (!req.user) {
-        return res.status(403).send("Login required to view invoice");
-      }
-
-      if (payment.loggedInUser._id.toString() !== req.user._id.toString()) {
-        return res.status(403).send("Unauthorized");
-      }
-    }
-    if (payment.loggedInUser?._id) {
-      return res.status(403).send("Unauthorized");
-    }
-    res.setHeader("Content-Type", "text/html");
-    res.render("invoice-template", {
-      payment,
-      printedAt: new Date(),
-    });
-  } catch (err) {
-    console.error("Invoice render failed:", err);
-    res.status(500).send("Failed to load invoice");
-  }
-});
-
 async function sendUserPaymentConfirmationEmail(payment, transporter) {
   const subject =
     payment.source === "appointment"
@@ -396,7 +404,7 @@ async function sendUserPaymentConfirmationEmail(payment, transporter) {
     }
 
     <p>
-      <a href=${process.env.SERVER_URL}/api/paystation/${payment.invoice}">
+      <a href=${process.env.SERVER_URL}/api/paystation/invoice/${payment.invoice}">
         View / Print Invoice
       </a>
     </p>
@@ -417,6 +425,237 @@ Amount: ${payment.amount} BDT`,
   } catch (err) {
     console.error("User confirmation email failed:", err);
   }
+}
+
+router.get("/invoice/:invoice", userCheckerMiddleware, async (req, res) => {
+  try {
+    const invoice = req.params.invoice;
+
+    const payment = await paymentCollection.findOne({
+      invoice,
+      status: "paid",
+    });
+
+    if (!payment) {
+      return res.status(404).send("Invoice not found");
+    }
+
+    if (payment.loggedInUser?._id) {
+      if (!req.user) {
+        return res.status(403).send("Login required to view invoice");
+      }
+
+      if (payment.loggedInUser._id.toString() !== req.user._id.toString()) {
+        return res.status(403).send("Unauthorized");
+      }
+    }
+    if (payment.loggedInUser?._id) {
+      return res.status(403).send("Unauthorized");
+    }
+    res.setHeader("Content-Type", "text/html");
+    res.render("invoice-template", {
+      payment,
+      printedAt: new Date(),
+    });
+  } catch (err) {
+    console.error("Invoice render failed:", err);
+    res.status(500).send("Failed to load invoice");
+  }
+});
+const createOrder = async (payment) => {
+  const { items, voucher, deliveryCharge } = payment.payload;
+
+  const order = {
+    invoice: payment.invoice,
+    paymentId: payment._id,
+    customer: payment.customer,
+    items,
+    voucher,
+    deliveryCharge,
+    totalAmount: payment.amount,
+    paymentMethod: payment.payment_method,
+    trx_id: payment.trx_id,
+    status: "paid",
+    orderedAt: new Date(),
+    createdAt: new Date(),
+  };
+
+  const result = await orderCollection.insertOne(order);
+  if (!result.insertedId) {
+    throw new Error("Order creation failed");
+  }
+
+  for (const item of items) {
+    const update = await shopCollection.updateOne(
+      {
+        _id: new ObjectId(item.productId),
+        stockQuantity: { $gte: item.quantity },
+      },
+      {
+        $inc: { stockQuantity: -item.quantity },
+      },
+    );
+
+    if (update.modifiedCount === 0) {
+      throw new Error(`Stock update failed for ${item.productId}`);
+    }
+  }
+
+  return { order };
+};
+
+async function sendAdminOrderNotificationEmail(order, transporter) {
+  const renderVariant = (variant, unit) => {
+    const parts = [];
+    if (variant?.size) parts.push(`Size: ${variant.size}`);
+    if (variant?.color) parts.push(`Color: ${variant.color}`);
+    if (unit) parts.push(`Unit: ${unit}`);
+    return parts.length ? ` (${parts.join(", ")})` : "";
+  };
+
+  const itemsHtml = order.items
+    .map(
+      (i) => `
+    <li>
+  <strong>${i.title}</strong><br/>
+  Quantity: ${i.quantity}${i.unit ? ` ${i.unit}` : ""}<br/>
+  Unit Price: ${i.price} BDT<br/>
+  ${renderVariant(i.variant, i.unit)}
+</li>
+      `,
+    )
+    .join("");
+
+  const html = `
+    <h2>🛒 New Shop Order Received</h2>
+
+    <p><strong>Invoice:</strong> ${order.invoice}</p>
+    <p><strong>Total Amount:</strong> ${order.totalAmount} BDT</p>
+
+    <hr/>
+
+    <h3>Customer Details</h3>
+    <p>
+      Name: ${order.customer.name}<br/>
+      Phone: ${order.customer.mobile}<br/>
+      Email: ${order.customer.email}<br/>
+      Address: ${order.customer.address}
+    </p>
+
+    <hr/>
+
+    <h3>Payment Details</h3>
+    <p>
+      Method: ${order.paymentMethod}<br/>
+      Transaction ID: ${order.trx_id}
+    </p>
+
+    <hr/>
+
+    <h3>Ordered Items</h3>
+    <ul>
+      ${itemsHtml}
+    </ul>
+
+    <p><strong>Delivery Charge:</strong> ${order.deliveryCharge || 0} BDT</p>
+
+    ${
+      order.voucher
+        ? `<p><strong>Voucher:</strong> ${order.voucher.code} (-${order.voucher.discount} BDT)</p>`
+        : ""
+    }
+
+    <p><em>Order placed at ${new Date(order.orderedAt).toLocaleString()}</em></p>
+  `;
+
+  await transporter.sendMail({
+    from: '"SukunLife" <no-reply@sukunlife.com>',
+    to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
+    subject: "🛒 New Shop Order Received",
+    html,
+  });
+}
+async function sendUserOrderInvoiceEmail(order, transporter) {
+  const renderVariant = (variant, unit) => {
+    const parts = [];
+    if (variant?.size) parts.push(`Size: ${variant.size}`);
+    if (variant?.color) parts.push(`Color: ${variant.color}`);
+    if (unit) parts.push(`Unit: ${unit}`);
+    return parts.length ? ` (${parts.join(", ")})` : "";
+  };
+
+  const itemsHtml = order.items
+    .map(
+      (i) => `
+  <td>
+  ${i.title}${renderVariant(i.variant, i.unit)}
+</td>
+<td align="center">
+  ${i.quantity}${i.unit ? ` ${i.unit}` : ""}
+</td>
+<td align="right">${i.price} BDT</td>
+<td align="right">${i.price * i.quantity} BDT</td>
+
+      `,
+    )
+    .join("");
+
+  const html = `
+    <h2>🧾 Your Order Invoice</h2>
+
+    <p>Hello ${order.customer.name},</p>
+    <p>Thank you for shopping with us. Here is your invoice:</p>
+
+    <p>
+      <strong>Invoice:</strong> ${order.invoice}<br/>
+      <strong>Transaction ID:</strong> ${order.trx_id}<br/>
+      <strong>Payment Method:</strong> ${order.paymentMethod}
+    </p>
+
+    <table width="100%" border="1" cellspacing="0" cellpadding="8">
+      <thead>
+        <tr>
+          <th align="left">Item</th>
+          <th align="center">Qty</th>
+          <th align="right">Unit Price</th>
+          <th align="right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsHtml}
+      </tbody>
+    </table>
+
+    <p><strong>Delivery Charge:</strong> ${order.deliveryCharge || 0} BDT</p>
+
+    ${
+      order.voucher
+        ? `<p><strong>Discount:</strong> -${order.voucher.discount} BDT</p>`
+        : ""
+    }
+
+    <h3>Total Paid: ${order.totalAmount} BDT</h3>
+
+    <p>
+      Your order is now being processed.  
+      We’ll contact you if any further information is needed.
+    </p>
+
+    <p>
+      <a href="${process.env.SERVER_URL}/api/paystation/invoice/${order.invoice}">
+        View / Print Invoice
+      </a>
+    </p>
+
+    <p>Thank you for choosing SukunLife 💚</p>
+  `;
+
+  await transporter.sendMail({
+    from: '"SukunLife" <no-reply@sukunlife.com>',
+    to: order.customer.email,
+    subject: "🧾 Your Order Invoice",
+    html,
+  });
 }
 
 export default router;
