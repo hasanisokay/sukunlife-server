@@ -24,6 +24,7 @@ const corsOptions = {
       "http://localhost:3000",
       "https://sukunlife.com",
       "https://www.sukunlife.com",
+      "https://upload.sukunlife.com"
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
