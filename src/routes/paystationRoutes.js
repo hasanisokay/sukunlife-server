@@ -150,6 +150,9 @@ router.post("/initiate", async (req, res) => {
     if (deliveryArea === "Inside Dhaka") {
       deliveryCharge = 80;
     }
+    if (deliveryArea === "test") {
+      deliveryCharge = 2;
+    }
     amount += deliveryCharge;
 
     orderPayload = {

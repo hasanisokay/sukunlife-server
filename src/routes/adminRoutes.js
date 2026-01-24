@@ -4,8 +4,7 @@ import strictAdminMiddleware from "../middlewares/strictAdminMiddleware.js";
 import dbConnect from "../config/db.mjs";
 import { ObjectId } from "mongodb";
 import convertToDhakaTime from "../utils/convertToDhakaTime.mjs";
-import { uploadPrivateVideo } from "../middlewares/privateUpload.middleware.js";
-
+import { uploadPrivateFile } from "../middlewares/uploadPrivateFile.middleware.js";
 const router = express.Router();
 const db = await dbConnect();
 const blogsCollection = db?.collection("blogs");
@@ -1461,17 +1460,32 @@ router.delete(
 
 // video file upload for course
 router.post(
-  "/course/:courseId/video",
+  "/course/upload",
   strictAdminMiddleware,
-  uploadPrivateVideo.single("video"),
+  uploadPrivateFile.single("file"),
   async (req, res) => {
+    let type;
+
+    if (req.file.mimetype.startsWith("video/")) {
+      type = "video";
+    } else if (req.file.mimetype === "application/pdf") {
+      type = "pdf";
+    } else if (req.file.mimetype.startsWith("audio/")) {
+      type = "audio";
+    } else if (req.file.mimetype.startsWith("image/")) {
+      type = "image";
+    } else {
+      return res.status(400).json({ error: "Unsupported file type" });
+    }
+
     res.json({
-      message: "Video uploaded",
-      videoId: video?._id,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      mime: req.file.mimetype,
+      message: "File uploaded",
+      fileId: file?._id,
+      filename: req?.file?.filename,
+      originalName: req?.file?.originalname,
+      mime: req?.file?.mimetype,
+      size: req?.file?.size,
+      type,
     });
   },
 );

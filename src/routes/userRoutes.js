@@ -428,7 +428,7 @@ router.post(
   }
 )
 
-//video stream for course
+//video stream for course. not implemented yet.
 
 
 router.get(
@@ -488,5 +488,63 @@ router.get(
     }
   }
 );
+
+router.get(
+  "/course/file/:fileId",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    const userId = req.user.id;
+    const { fileId } = req.params;
+
+    const file = await CourseFile.findById(fileId);
+    if (!file) return res.status(404).json({ error: "Not found" });
+
+    const hasAccess = await Purchase.exists({
+      user: userId,
+      course: file.course,
+    });
+
+    if (!hasAccess) return res.status(403).json({ error: "Access denied" });
+
+    const folder =
+      file.type === "video"
+        ? "videos"
+        : file.type === "pdf"
+        ? "pdfs"
+        : "audio";
+
+    const filePath = path.join(
+      "/data/uploads/private",
+      folder,
+      file.filename
+    );
+
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    if (range && file.type === "video") {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      const chunkSize = end - start + 1;
+      const stream = fs.createReadStream(filePath, { start, end });
+
+      res.writeHead(206, {
+        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+        "Accept-Ranges": "bytes",
+        "Content-Length": chunkSize,
+        "Content-Type": file.mime,
+      });
+
+      stream.pipe(res);
+    } else {
+      res.setHeader("Content-Type", file.mime);
+      fs.createReadStream(filePath).pipe(res);
+    }
+  }
+);
+
 
 export default router;

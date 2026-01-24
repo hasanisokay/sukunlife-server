@@ -20,7 +20,7 @@ const dbConnect = async () => {
       db = client.db("sukunlife");
     }
     // switch to sukunlife for production.
-    db = client.db("sukunlife");
+    // db = client.db("sukunlife");
     await client.db("admin").command({ ping: 1 });
     return db;
   } catch (e) {
