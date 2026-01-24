@@ -1,41 +1,28 @@
 import express from "express";
 import dbConnect from "../config/db.mjs";
-import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
-import convertDateToDateObject from "../utils/convertDateToDateObject.mjs";
 import { ObjectId } from "mongodb";
 import nodemailer from "nodemailer";
-import sendOrderEmailToAdmin from "../utils/sendOrderEmailToAdmin.mjs";
-import sendOrderEmailToUser from "../utils/sendOrderEmailToUser.mjs";
-import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
 import lowUserOnlyMiddleware from "../middlewares/lowUserOnlyMiddleware.js";
 import strictUserOnlyMiddleware from "../middlewares/strictUserOnlyMiddleware.mjs";
 import { uploadPublicFile } from "../middlewares/upload.middleware.js";
+
+import fs from "fs";
+import path from "path";
 
 const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
 
-const blogsCollection = db?.collection("blogs");
-const scheduleCollection = db?.collection("schedules");
 const appointmentCollection = db?.collection("appointments");
 const courseCollection = db?.collection("courses");
 const shopCollection = db?.collection("shop");
 const usersCollection = db?.collection("users");
-const voucherCollection = db?.collection("vouchers");
 const orderCollection = db?.collection("orders");
 const appointmentReviewCollection = db?.collection("appointment-reviews");
 
-let transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_SERVICE_HOST,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_ID,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+
 
 router.put("/update-user-info", lowUserOnlyMiddleware, async (req, res) => {
   try {
@@ -442,8 +429,7 @@ router.post(
 )
 
 //video stream for course
-import fs from "fs";
-import path from "path";
+
 
 router.get(
   "/course/video/:videoId",

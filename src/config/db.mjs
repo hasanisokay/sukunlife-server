@@ -14,8 +14,12 @@ const dbConnect = async () => {
         deprecationErrors: true,
       },
     });
-    // db = client.db("sukunlife-big");
-    // switch to sukunlife big for production.
+    if(process.env.NODE_ENV==='development'){
+      db = client.db("sukunlife-big")
+    }else{
+      db = client.db("sukunlife");
+    }
+    // switch to sukunlife for production.
     db = client.db("sukunlife");
     await client.db("admin").command({ ping: 1 });
     return db;

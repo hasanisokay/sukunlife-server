@@ -46,7 +46,6 @@ router.post("/login", async (req, res) => {
     const user = await usersCollection.findOne({
       $or: [{ email: userIdentifier }, { mobile: userIdentifier }],
     });
-
     if (!user || !(await bcrypt.compare(password, user?.password))) {
       return res
         .status(401)
