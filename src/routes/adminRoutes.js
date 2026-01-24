@@ -4,6 +4,7 @@ import strictAdminMiddleware from "../middlewares/strictAdminMiddleware.js";
 import dbConnect from "../config/db.mjs";
 import { ObjectId } from "mongodb";
 import convertToDhakaTime from "../utils/convertToDhakaTime.mjs";
+import { uploadPrivateVideo } from "../middlewares/privateUpload.middleware.js";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -30,7 +31,7 @@ router.get("/check-blog-url", lowAdminMiddleware, async (req, res) => {
     }
     const isAvailable = await blogsCollection.findOne(
       { blogUrl: url },
-      { projection: { _id: 1 } }
+      { projection: { _id: 1 } },
     );
     return res.json({
       message: isAvailable ? "Url is taken." : "Url is available.",
@@ -277,7 +278,7 @@ router.post(
         status: 500,
       });
     }
-  }
+  },
 );
 
 router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
@@ -294,7 +295,7 @@ router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
     // Remove selected times from the dates
     await scheduleCollection.updateMany(
       { _id: { $in: objectIds } },
-      { $pull: { times: { $in: times } } }
+      { $pull: { times: { $in: times } } },
     );
 
     // Delete dates that have no times left
@@ -452,7 +453,7 @@ router.get("/check-course-id", lowAdminMiddleware, async (req, res) => {
     }
     const isAvailable = await courseCollection.findOne(
       { courseId: id },
-      { projection: { _id: 1 } }
+      { projection: { _id: 1 } },
     );
 
     return res.json({
@@ -564,7 +565,7 @@ router.put("/course/:id", strictAdminMiddleware, async (req, res) => {
 
     const result = await courseCollection.updateOne(
       { _id: new ObjectId(courseId) },
-      { $set: dataWithoutId }
+      { $set: dataWithoutId },
     );
 
     if (result?.matchedCount > 0) {
@@ -597,7 +598,7 @@ router.get("/check-product-id", lowAdminMiddleware, async (req, res) => {
     }
     const isAvailable = await shopCollection.findOne(
       { productId: id },
-      { projection: { _id: 1 } }
+      { projection: { _id: 1 } },
     );
     return res.json({
       message: isAvailable
@@ -667,7 +668,7 @@ router.put("/products/:id", strictAdminMiddleware, async (req, res) => {
 
     const result = await shopCollection.updateOne(
       { _id: new ObjectId(id) },
-      { $set: dataWithoutId }
+      { $set: dataWithoutId },
     );
 
     if (result?.matchedCount > 0) {
@@ -826,7 +827,7 @@ router.delete(
         .status(500)
         .json({ message: "Server error", error: error.message, status: 500 });
     }
-  }
+  },
 );
 
 router.put("/approve-order/:id", strictAdminMiddleware, async (req, res) => {
@@ -839,7 +840,7 @@ router.put("/approve-order/:id", strictAdminMiddleware, async (req, res) => {
 
     const orderUpdateResult = await orderCollection.updateOne(
       { _id: new ObjectId(id) },
-      { $set: { status: "approved" } }
+      { $set: { status: "approved" } },
     );
 
     if (orderUpdateResult.matchedCount === 0) {
@@ -848,7 +849,7 @@ router.put("/approve-order/:id", strictAdminMiddleware, async (req, res) => {
     if (courseIds && courseIds?.length > 0) {
       await usersCollection.updateOne(
         { _id: new ObjectId(userId) },
-        { $push: { enrolledCourses: { $each: courseIds } } }
+        { $push: { enrolledCourses: { $each: courseIds } } },
       );
       await courseCollection.updateMany(
         {
@@ -856,7 +857,7 @@ router.put("/approve-order/:id", strictAdminMiddleware, async (req, res) => {
             $in: courseIds.map((c) => c.courseId),
           },
         },
-        { $addToSet: { students: userId } }
+        { $addToSet: { students: userId } },
       );
     }
     return res.status(200).json({
@@ -915,7 +916,7 @@ router.patch("/:userId/role", strictAdminMiddleware, async (req, res) => {
     const { userId } = req.params;
     const result = await usersCollection.updateOne(
       { _id: new ObjectId(userId) },
-      { $set: { role } }
+      { $set: { role } },
     );
     return res.status(200).json({
       result,
@@ -934,7 +935,7 @@ router.patch("/:userId/status", strictAdminMiddleware, async (req, res) => {
     const { userId } = req.params;
     const result = await usersCollection.updateOne(
       { _id: new ObjectId(userId) },
-      { $set: { status } }
+      { $set: { status } },
     );
     return res.status(200).json({
       result,
@@ -976,7 +977,7 @@ router.put("/edit-resource/:id", strictAdminMiddleware, async (req, res) => {
     }
     const result = await resourceCollection.updateOne(
       { _id: new ObjectId(id) },
-      { $set: data }
+      { $set: data },
     );
     return res.status(200).json({
       message: "Resource updated successfully",
@@ -1022,7 +1023,7 @@ router.delete(
         .status(500)
         .json({ message: "Server error", error: error.message, status: 500 });
     }
-  }
+  },
 );
 // get notes
 router.get("/notes", strictAdminMiddleware, async (req, res) => {
@@ -1177,7 +1178,7 @@ router.put("/update-note/:id", strictAdminMiddleware, async (req, res) => {
     delete data._id;
     const result = await noteCollection.updateOne(
       { _id: new ObjectId(id) },
-      { $set: data }
+      { $set: data },
     );
     return res.status(200).json({
       message: "Note updated successfully",
@@ -1275,7 +1276,7 @@ router.post("/add-review", strictAdminMiddleware, async (req, res) => {
 
     const reviewDate = new Date(date);
     let result;
-    
+
     if (type === "appointment") {
       const reviewToInsert = {
         appointmentId: generateUniqueId("appt"),
@@ -1310,7 +1311,7 @@ router.post("/add-review", strictAdminMiddleware, async (req, res) => {
 
       result = await shopCollection.updateOne(
         { _id: new ObjectId(productId) },
-        { $push: { reviews: review } }
+        { $push: { reviews: review } },
       );
 
       // Check if the product was found and updated
@@ -1344,7 +1345,7 @@ router.post("/add-review", strictAdminMiddleware, async (req, res) => {
 
       result = await courseCollection.updateOne(
         { _id: new ObjectId(courseId) },
-        { $push: { reviews: review } }
+        { $push: { reviews: review } },
       );
 
       // Check if the course was found and updated
@@ -1408,7 +1409,7 @@ router.get(
         .status(500)
         .json({ message: "Server error", error: error.message, status: 500 });
     }
-  }
+  },
 );
 
 router.get("/appointments/review/:id", lowAdminMiddleware, async (req, res) => {
@@ -1455,6 +1456,24 @@ router.delete(
         error: error.message,
       });
     }
-  }
+  },
 );
+
+// video file upload for course
+router.post(
+  "/course/:courseId/video",
+  strictAdminMiddleware,
+  uploadPrivateVideo.single("video"),
+  async (req, res) => {
+    res.json({
+      message: "Video uploaded",
+      videoId: video?._id,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mime: req.file.mimetype,
+    });
+  },
+);
+
 export default router;
