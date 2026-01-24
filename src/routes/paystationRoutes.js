@@ -148,7 +148,7 @@ router.post("/initiate", async (req, res) => {
     let deliveryCharge = 120; // default Outside Dhaka
 
     if (deliveryArea === "Inside Dhaka") {
-      deliveryCharge = 0;
+      deliveryCharge = 80;
     }
     amount += deliveryCharge;
 
