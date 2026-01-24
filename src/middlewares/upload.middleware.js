@@ -45,7 +45,7 @@ export const uploadPublicFile = multer({
       return cb(new Error("File type not allowed"));
     }
 
-    // attach type for later use
+    // attached type for later use
     file._fileType = type;
     cb(null, true);
   },
