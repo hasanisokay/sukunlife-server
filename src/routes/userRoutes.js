@@ -11,7 +11,7 @@ import sendOrderEmailToUser from "../utils/sendOrderEmailToUser.mjs";
 import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
 import lowUserOnlyMiddleware from "../middlewares/lowUserOnlyMiddleware.js";
 import strictUserOnlyMiddleware from "../middlewares/strictUserOnlyMiddleware.mjs";
-import { uploadImage } from "../middlewares/upload.middleware.js";
+import { uploadPublicFile } from "../middlewares/upload.middleware.js";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -407,9 +407,39 @@ router.post("/submit-review", async (req, res) => {
   }
 });
 
-router.post("/upload/image", strictUserOnlyMiddleware, uploadImage.single("image"), (req, res) => {
-  const url = `https://cdn.sukunlife.com/images/${req.file.filename}`;
-  res.json({ url });
-});
+router.post(
+  "/upload/file",
+  strictUserOnlyMiddleware,
+  uploadPublicFile.single("file"),
+  (req, res) => {
+    const type = req.file._fileType;
+
+
+    const limits = {
+      image: 50 * 1024 * 1024, //50mb for img
+      audio: 200 * 1024 * 1024, //200 mb for audio
+      video: 1000 * 1024 * 1024, //1000mb for video
+      pdf: 50 * 1024 * 1024, //50mb for pdf
+    };
+
+
+    if (req.file.size > limits[type]) {
+      return res.status(400).json({
+        error: `${type} files must be smaller than ${limits[type] / 1024 / 1024}MB`,
+      });
+    }
+
+    let folder = "docs";
+    if (type === "image") folder = "images";
+    if (type === "audio") folder = "audio";
+    if (type === "video") folder = "video";
+    if (type === "pdf") folder = "docs";
+
+    const url = `https://cdn.sukunlife.com/${folder}/${req.file.filename}`;
+
+    res.json({ url, type });
+  }
+);
+
 
 export default router;
