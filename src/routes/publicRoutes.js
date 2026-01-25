@@ -8,6 +8,7 @@ import nodemailer from "nodemailer";
 import sendOrderEmailToAdmin from "../utils/sendOrderEmailToAdmin.mjs";
 import sendOrderEmailToUser from "../utils/sendOrderEmailToUser.mjs";
 import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
+import sendUserBookingConfirmationEmail from "../utils/sendUserBookingConfirmationEmail.mjs";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -26,7 +27,7 @@ const appointmentReviewCollection = db?.collection("appointment-reviews");
 let transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: Number(process.env.EMAIL_SERVICE_HOST),
-   secure: false, // true for 465, false for 587
+  secure: false, // true for 465, false for 587
   auth: {
     user: process.env.EMAIL_ID,
     pass: process.env.EMAIL_PASS,
@@ -481,10 +482,27 @@ router.post("/book-appointment", async (req, res) => {
     modifiedBookingData.bookingDate = new Date();
 
     const result = await appointmentCollection.insertOne(modifiedBookingData);
+    // if (result?.insertedId) {
+    //   await Promise.all([
+    //     sendAdminBookingConfirmationEmail(bookingData, transporter),
+    //     sendUserBookingConfirmationEmail(bookingData, transporter),
+    //   ]);
+
+    //   return res.status(200).json({
+    //     message: "Booked successfully.",
+    //     result,
+    //     status: 200,
+    //   });
+    // }
     if (result?.insertedId) {
-    const emailS=  await sendAdminBookingConfirmationEmail(bookingData, transporter);
-    console.log(emailS)  
-    return res.status(200).json({
+      Promise.all([
+        sendAdminBookingConfirmationEmail(bookingData, transporter),
+        sendUserBookingConfirmationEmail(bookingData, transporter),
+      ]).catch((err) => {
+        console.error("Email error:", err);
+      });
+
+      return res.status(200).json({
         message: "Booked successfully.",
         result,
         status: 200,
@@ -1376,17 +1394,10 @@ router.get("/top-reviews", async (req, res) => {
   }
 });
 
-
 // payments
 
 router.post("/initiate-payment", async (req, res) => {
-  const {
-    invoice,
-    name,
-    mobile,
-    address,
-    reference
-  } = req.body;
+  const { invoice, name, mobile, address, reference } = req.body;
 
   const payload = {
     merchantId: process.env.PAYSTATION_MERCHANT_ID,
@@ -1400,7 +1411,7 @@ router.post("/initiate-payment", async (req, res) => {
     cust_phone: mobile,
     cust_email: "noemail@sukunlife.com",
     cust_address: address,
-    callback_url: `${process.env.CLIENT_URL}/api/paystation/callback`
+    callback_url: `${process.env.CLIENT_URL}/api/paystation/callback`,
   };
 
   try {
@@ -1409,17 +1420,15 @@ router.post("/initiate-payment", async (req, res) => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }
+        body: JSON.stringify(payload),
+      },
     );
 
     const data = await response.json();
     res.json(data);
-
   } catch (err) {
     res.status(500).json({ message: "Payment initiation failed" });
   }
 });
-
 
 export default router;

@@ -1480,12 +1480,10 @@ router.post(
 
     return res.json({
       message: "File uploaded",
-      fileId: req?.file?._id,
       filename: req?.file?.filename,
       originalName: req?.file?.originalname,
       mime: req?.file?.mimetype,
       size: req?.file?.size,
-      type,
     });
   },
 );
