@@ -255,33 +255,19 @@ async function verifyPayment(invoice_number) {
 router.post("/finalize-payment", async (req, res) => {
   try {
     const { invoice_number } = req.body;
+    const paymentResult = await paymentCollection.findOneAndUpdate(
+      { invoice: invoice_number, status: "pending" },
+      { $set: { status: "processing" } },
+      { returnDocument: "after" },
+    );
 
-    const payment = await paymentCollection.findOne({
-      invoice: invoice_number,
-    });
-
-    if (!payment) {
-      return res.status(404).json({ message: "Invalid invoice" });
-    }
-    if (payment.status === "paid") {
-      return res.status(200).json({
-        message: "Processed already",
-        paymentOk: true,
-        alreadyProcessed: true,
-      });
-    }
-    if (payment.status === "failed") {
-      return res
-        .status(400)
-        .json({ message: "Failed payment.", paymentOk: false });
-    }
-
-    // 🔁 Idempotency guard
-    if (payment?.fulfilled) {
+    if (!paymentResult.value) {
       return res.status(200).json({ alreadyProcessed: true });
     }
 
-    // 🔐 Verify with PayStation
+    const payment = paymentResult?.value;
+
+    // Verify with PayStation
     const verification = await verifyPayment(invoice_number);
     const v = verification?.data;
 
@@ -296,7 +282,7 @@ router.post("/finalize-payment", async (req, res) => {
       return res.status(400).json({ message: "Verification failed" });
     }
 
-    // 💰 Mark paid
+    //  Mark paid
     await paymentCollection.updateOne(
       { invoice: invoice_number },
       {
@@ -311,24 +297,28 @@ router.post("/finalize-payment", async (req, res) => {
     );
 
     if (payment.source === "appointment") {
-      await createAppointment(payment, verification);
+      const emailSendingDetails = {
+        ...payment,
+        trx_id: v.trx_id,
+        payment_method: v.payment_method,
+      };
+      await createAppointment(payment, verification, emailSendingDetails).catch(
+        console.error,
+      );
     }
+
     if (payment.source === "shop") {
       const orderResult = await createOrder(payment);
-      await sendAdminOrderNotificationEmail(orderResult.order, transporter);
-      await sendUserOrderInvoiceEmail(orderResult.order, transporter);
+      Promise.all([
+        await sendAdminOrderNotificationEmail(orderResult.order, transporter),
+        await sendUserOrderInvoiceEmail(orderResult.order, transporter),
+      ]).catch(console.error);
     }
-    const emailSendingDetails = {
-      ...payment,
-      trx_id: v.trx_id,
-      payment_method: v.payment_method,
-    };
-    await sendUserPaymentConfirmationEmail(emailSendingDetails, transporter);
+
     await paymentCollection.updateOne(
-      { invoice: invoice_number },
+      { invoice: invoice_number, status: "paid" },
       { $set: { fulfilled: true, fulfilledAt: new Date() } },
     );
-
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error("Finalize payment error:", error);
@@ -336,7 +326,11 @@ router.post("/finalize-payment", async (req, res) => {
   }
 });
 
-const createAppointment = async (payment, verification) => {
+const createAppointment = async (
+  payment,
+  verification,
+  emailSendingDetails,
+) => {
   try {
     const v = verification?.data;
     const booking = payment.payload;
@@ -353,16 +347,18 @@ const createAppointment = async (payment, verification) => {
       bookingDate: new Date(),
       createdAt: new Date(),
     };
-    const result = await appointmentCollection.insertOne(appointment);
 
-    if (result.insertedId) {
-      try {
-        await sendAdminBookingConfirmationEmail(appointment, transporter);
-      } catch {
-        console.log("sending admin email failed");
-      }
-      return { status: 200 };
+    try {
+      await appointmentCollection.insertOne(appointment);
+
+      Promise.all([
+        await sendAdminBookingConfirmationEmail(appointment, transporter),
+        await sendUserPaymentConfirmationEmail(emailSendingDetails, transporter),
+      ]).catch(console.error);
+    } catch (e) {
+      console.log("sending admin email failed", e);
     }
+    return { status: 200 };
   } catch (error) {
     console.error("Appointment creation failed:", error);
     throw error;
@@ -460,9 +456,6 @@ router.get("/invoice/:invoice", userCheckerMiddleware, async (req, res) => {
     res.status(500).send("Failed to load invoice");
   }
 });
-
-
-
 
 const createOrder = async (payment) => {
   const { items, voucher, deliveryCharge } = payment.payload;
