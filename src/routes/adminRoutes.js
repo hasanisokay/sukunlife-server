@@ -1480,7 +1480,7 @@ router.post(
 
     res.json({
       message: "File uploaded",
-      fileId: file?._id,
+      fileId: req?.file?._id,
       filename: req?.file?.filename,
       originalName: req?.file?.originalname,
       mime: req?.file?.mimetype,
