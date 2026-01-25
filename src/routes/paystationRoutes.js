@@ -274,6 +274,10 @@ router.post("/finalize-payment", async (req, res) => {
       verification?.status?.toLowerCase() !== "success" ||
       v?.trx_status?.toLowerCase() !== "successful"
     ) {
+      await paymentCollection.updateOne(
+        { invoice: invoice_number, status: "processing" },
+        { $set: { status: "pending" } },
+      );
       return res.status(400).json({ message: "Payment verification failed" });
     }
 
