@@ -261,10 +261,9 @@ router.post("/finalize-payment", async (req, res) => {
       { returnDocument: "after" },
     );
 
-    if (!paymentResult.value) {
+    if (!paymentResult?.value) {
       return res.status(200).json({ alreadyProcessed: true });
     }
-
     const payment = paymentResult?.value;
 
     // Verify with PayStation
@@ -275,12 +274,7 @@ router.post("/finalize-payment", async (req, res) => {
       verification?.status?.toLowerCase() !== "success" ||
       v?.trx_status?.toLowerCase() !== "successful"
     ) {
-      // await paymentCollection.updateOne(
-      //   { invoice: invoice_number },
-      //   { $set: { status: "failed" } },
-      // );
-          return res.status(400).json({ message: "Payment failed" });
-      // return res.status(400).json({ message: "Verification failed" });
+      return res.status(400).json({ message: "Payment verification failed" });
     }
 
     //  Mark paid
@@ -290,7 +284,7 @@ router.post("/finalize-payment", async (req, res) => {
         $set: {
           status: "paid",
           trx_id: v.trx_id,
-          payment_method: v.payment_method,
+          payment_method: v?.payment_method,
           paidAt: new Date(),
           raw_response: verification,
         },
@@ -306,13 +300,11 @@ router.post("/finalize-payment", async (req, res) => {
       await createAppointment(payment, verification, emailSendingDetails).catch(
         console.error,
       );
-    }
-
-    if (payment.source === "shop") {
+    } else if (payment.source === "shop") {
       const orderResult = await createOrder(payment);
       Promise.all([
-        await sendAdminOrderNotificationEmail(orderResult.order, transporter),
-        await sendUserOrderInvoiceEmail(orderResult.order, transporter),
+        sendAdminOrderNotificationEmail(orderResult.order, transporter),
+        sendUserOrderInvoiceEmail(orderResult.order, transporter),
       ]).catch(console.error);
     }
 
@@ -353,8 +345,8 @@ const createAppointment = async (
       await appointmentCollection.insertOne(appointment);
 
       Promise.all([
-        await sendAdminBookingConfirmationEmail(appointment, transporter),
-        await sendUserPaymentConfirmationEmail(emailSendingDetails, transporter),
+        sendAdminBookingConfirmationEmail(appointment, transporter),
+        sendUserPaymentConfirmationEmail(emailSendingDetails, transporter),
       ]).catch(console.error);
     } catch (e) {
       console.log("sending admin email failed", e);
