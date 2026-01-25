@@ -1478,7 +1478,7 @@ router.post(
       return res.status(400).json({ error: "Unsupported file type" });
     }
 
-    res.json({
+    return res.json({
       message: "File uploaded",
       fileId: req?.file?._id,
       filename: req?.file?.filename,
