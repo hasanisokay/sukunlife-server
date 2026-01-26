@@ -7,7 +7,7 @@ const getFolderFromMime = (mimetype) => {
   if (mimetype === "application/pdf") return "pdfs";
   if (mimetype.startsWith("audio/")) return "audio";
   if (mimetype.startsWith("image/")) return "images";
-  return "other";
+  return "files";
 };
 
 const storage = multer.diskStorage({
@@ -24,18 +24,6 @@ const storage = multer.diskStorage({
 export const uploadPrivateFile = multer({
   storage,
   limits: {
-    fileSize: 2 * 1024 * 1024 * 1024, // 2GB max (global cap)
-  },
-  fileFilter: (req, file, cb) => {
-    if (
-      file.mimetype.startsWith("video/") ||
-      file.mimetype.startsWith("audio/") ||
-      file.mimetype.startsWith("image/") ||
-      file.mimetype === "application/pdf"
-    ) {
-      cb(null, true);
-    } else {
-      cb(new Error("File type not allowed"));
-    }
+    fileSize: 2 * 1024 * 1024 * 1024, // 2GB
   },
 });

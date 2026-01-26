@@ -1475,7 +1475,7 @@ router.post(
     } else if (req.file.mimetype.startsWith("image/")) {
       type = "image";
     } else {
-      return res.status(400).json({ error: "Unsupported file type" });
+      type = "file";
     }
 
     return res.json({
