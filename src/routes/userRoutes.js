@@ -18,6 +18,7 @@ dotenv.config();
 
 const appointmentCollection = db?.collection("appointments");
 const courseCollection = db?.collection("courses");
+const streamsCollection = db?.collection("streams");
 const shopCollection = db?.collection("shop");
 const usersCollection = db?.collection("users");
 const orderCollection = db?.collection("orders");
@@ -430,14 +431,13 @@ router.get(
       const userId = req?.user?._id.toString();
       const { courseId, filename } = req.params;
 
-      const courseInfo = await courseCollection.findOne(
-        { courseId, students: req?.user?._id },
-      );
+      const courseInfo = await courseCollection.findOne({
+        courseId,
+        students: req?.user?._id,
+      });
 
       if (!courseInfo) {
-        return res
-          .status(404)
-          .json({ message: "No course found.", status: 404 });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const isEnrolled = await usersCollection.findOne(
@@ -449,9 +449,7 @@ router.get(
       );
 
       if (!isEnrolled) {
-        return res
-          .status(404)
-          .json({ message: "No course found.", status: 404 });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       // 2. Find file inside modules
@@ -475,12 +473,41 @@ router.get(
         return res.status(404).json({ error: "File not found" });
       }
 
+      const activeStream = await streamsCollection.findOne({
+        userId: req.user._id,
+      });
+
+      if (activeStream) {
+        const diff = Date.now() - new Date(activeStream.lastPing).getTime();
+
+        if (diff < 60000 && activeStream.filename !== filename) {
+          return res.status(403).json({
+            error: "Another active stream detected",
+          });
+        }
+      }
+
+      // register / refresh stream AFTER check
+      await streamsCollection.updateOne(
+        { userId: req.user._id },
+        {
+          $set: {
+            userId: req.user._id,
+            courseId,
+            filename,
+            startedAt: new Date(),
+            lastPing: new Date(),
+          },
+        },
+        { upsert: true },
+      );
+
       // 3. Decide folder by mime/type
       let folder = "others";
       if (file.type === "video") folder = "videos";
       else if (file.url.mime?.startsWith("image")) folder = "images";
       else if (file.url.mime === "application/pdf") folder = "pdfs";
-
+      else if (file.url.mime?.startsWith("audio")) folder = "audio";
       const filePath = path.join(
         "/data/uploads/private",
         folder,
@@ -498,7 +525,7 @@ router.get(
       res.setHeader("Content-Type", file.url.mime);
       res.setHeader("Content-Disposition", "inline");
       res.setHeader("Cache-Control", "no-store");
-
+      res.setHeader("X-Content-Type-Options", "nosniff");
       // 4. Video streaming
       if (range && file.type === "video") {
         const parts = range.replace(/bytes=/, "").split("-");
@@ -525,5 +552,15 @@ router.get(
     }
   },
 );
+
+router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
+  await streamsCollection.updateOne(
+    { userId: req.user._id },
+    { $set: { lastPing: new Date() } },
+    { upsert: true },
+  );
+
+  res.json({ ok: true });
+});
 
 export default router;
