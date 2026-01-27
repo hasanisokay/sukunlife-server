@@ -76,23 +76,23 @@ router.post("/login", async (req, res) => {
       expiresIn: REFRESH_EXPIRATION,
     });
 
-    res.cookie("ACCESS_TOKEN", accessToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
-      domain: isProduction ? ".sukunlife.com" : undefined,
-      maxAge: 2 * 60 * 60 * 1000,
-      path: "/",
-    });
+res.cookie("ACCESS_TOKEN", accessToken, {
+  httpOnly: true,
+  secure: isProduction,                 // true only on HTTPS
+  sameSite: isProduction ? "none" : "lax",
+  domain: isProduction ? ".sukunlife.com" : "localhost",
+  maxAge: 2 * 60 * 60 * 1000,
+  path: "/",
+});
 
-    res.cookie("REFRESH_TOKEN", refreshToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
-      domain: isProduction ? ".sukunlife.com" : undefined,
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-      path: "/",
-    });
+res.cookie("REFRESH_TOKEN", refreshToken, {
+  httpOnly: true,
+  secure: isProduction,
+  sameSite: isProduction ? "none" : "lax",
+  domain: isProduction ? ".sukunlife.com" : "localhost",
+  maxAge: 30 * 24 * 60 * 60 * 1000,
+  path: "/",
+});
 
     return res.status(200).json({
       message: "Login successful",
