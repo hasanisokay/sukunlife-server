@@ -424,26 +424,42 @@ router.post(
 
 router.get(
   "/course/file/:courseId/:filename",
-  // strictUserOnlyMiddleware,
+  strictUserOnlyMiddleware,
   async (req, res) => {
     try {
-      // const userId = req?.user?._id.toString();
+      const userId = req?.user?._id.toString();
       const { courseId, filename } = req.params;
       console.log("req user from middleware in file course", req.user);
-      // 1. Find course and check student access
-      const course = await courseCollection.findOne({
-        courseId,
-        // students: userId,
-      });
 
-      // if (!course) {
-      //   return res.status(403).json({ error: "Access denied" });
-      // }
+      const courseInfo = await courseCollection.findOne(
+        { courseId, students: req?.user?._id },
+        { projection: { _id: 1 } },
+      );
+
+      if (!courseInfo) {
+        return res
+          .status(404)
+          .json({ message: "No course found.", status: 404 });
+      }
+
+      const isEnrolled = await usersCollection.findOne(
+        {
+          _id: new ObjectId(req.user._id),
+          enrolledCourses: courseInfo._id.toString(),
+        },
+        { projection: { _id: 1 } },
+      );
+
+      if (!isEnrolled) {
+        return res
+          .status(404)
+          .json({ message: "No course found.", status: 404 });
+      }
 
       // 2. Find file inside modules
       let file = null;
 
-      for (const module of course.modules) {
+      for (const module of courseInfo.modules) {
         for (const item of module.items) {
           if (
             item.url?.filename === filename &&

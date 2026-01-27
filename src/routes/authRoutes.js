@@ -76,7 +76,7 @@ router.post("/login", async (req, res) => {
       expiresIn: REFRESH_EXPIRATION,
     });
 
-res.cookie("ACCESS_TOKEN", accessToken, {
+res.cookie("acs_token", accessToken, {
   httpOnly: true,
   secure: isProduction,                 // true only on HTTPS
   sameSite: isProduction ? "none" : "lax",
@@ -85,7 +85,7 @@ res.cookie("ACCESS_TOKEN", accessToken, {
   path: "/",
 });
 
-res.cookie("REFRESH_TOKEN", refreshToken, {
+res.cookie("rfr_token", refreshToken, {
   httpOnly: true,
   secure: isProduction,
   sameSite: isProduction ? "none" : "lax",
