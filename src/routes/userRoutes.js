@@ -427,7 +427,7 @@ router.get(
   userCheckerMiddleware,
   async (req, res) => {
     try {
-      const userId = req.user._id.toString();
+      const userId = req?.user?._id.toString();
       const { courseId, filename } = req.params;
       console.log("req user from middleware in file course", req.user);
       // 1. Find course and check student access
