@@ -429,11 +429,9 @@ router.get(
     try {
       const userId = req?.user?._id.toString();
       const { courseId, filename } = req.params;
-      console.log("req user from middleware in file course", req.user);
 
       const courseInfo = await courseCollection.findOne(
         { courseId, students: req?.user?._id },
-        { projection: { _id: 1 } },
       );
 
       if (!courseInfo) {
@@ -444,7 +442,7 @@ router.get(
 
       const isEnrolled = await usersCollection.findOne(
         {
-          _id: new ObjectId(req.user._id),
+          _id: new ObjectId(userId),
           enrolledCourses: courseInfo._id.toString(),
         },
         { projection: { _id: 1 } },
