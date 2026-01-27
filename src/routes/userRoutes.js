@@ -10,6 +10,7 @@ import { uploadPublicFile } from "../middlewares/upload.middleware.js";
 
 import fs from "fs";
 import path from "path";
+import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -421,15 +422,14 @@ router.post(
   },
 );
 
-//video stream for course. not implemented yet.
 router.get(
   "/course/file/:courseId/:filename",
-  strictUserOnlyMiddleware,
+  userCheckerMiddleware,
   async (req, res) => {
     try {
       const userId = req.user._id.toString();
       const { courseId, filename } = req.params;
-
+      console.log("req user from middleware in file course", req.user);
       // 1. Find course and check student access
       const course = await courseCollection.findOne({
         courseId,
@@ -470,7 +470,7 @@ router.get(
       const filePath = path.join(
         "/data/uploads/private",
         folder,
-        file.url.filename
+        file.url.filename,
       );
 
       if (!fs.existsSync(filePath)) {
@@ -505,14 +505,11 @@ router.get(
         res.setHeader("Content-Length", fileSize);
         fs.createReadStream(filePath).pipe(res);
       }
-
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Server error" });
     }
-  }
+  },
 );
-
-
 
 export default router;
