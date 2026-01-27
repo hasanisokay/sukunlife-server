@@ -7,6 +7,8 @@ import convertDateToDateObject from "../utils/convertDateToDateObject.mjs";
 import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
 import nodemailer from "nodemailer";
 import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
+import { generateInvoicePDF } from "../utils/generateInvoicePDF.mjs";
+import { generateInvoiceHTML } from "../utils/generateInvoiceHtml.mjs";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -17,6 +19,7 @@ const courseCollection = db?.collection("courses");
 const shopCollection = db?.collection("shop");
 const voucherCollection = db?.collection("vouchers");
 const orderCollection = db?.collection("orders");
+const resourceCollection = db?.collection("resources");
 
 const CLIENT_URL = process.env.CLIENT_URL;
 let transporter = nodemailer.createTransport({
@@ -52,12 +55,12 @@ router.post("/initiate", async (req, res) => {
     items,
     voucherCode,
     deliveryArea,
+    loggedInUser,
   } = req.body;
 
   if (!name || !mobile || !address || !source) {
     return res.status(400).json({ message: "Missing required fields" });
   }
-
   const prefix = getInvoicePrefix(source);
   const invoice = `${prefix}-${new ObjectId().toString()}`;
   let amount = 0;
@@ -75,22 +78,42 @@ router.post("/initiate", async (req, res) => {
     const orderItems = [];
 
     for (const item of items) {
-      const product = await shopCollection.findOne({
-        _id: new ObjectId(item.productId),
-      });
+      let product;
+      if (item.type === "course") {
+        if (!loggedInUser) {
+          return res
+            .status(400)
+            .json({ message: "No user found. Must login to buy course." });
+        }
+        product = await courseCollection.findOne({
+          _id: new ObjectId(item.productId),
+        });
+      } else if (item.type === "product") {
+        product = await shopCollection.findOne({
+          _id: new ObjectId(item.productId),
+        });
+      } else if (item.type === "literature") {
+        product = await resourceCollection.findOne({
+          _id: new ObjectId(item.productId),
+        });
+      }
 
       if (!product) {
         return res.status(400).json({ message: "Invalid product" });
       }
 
-      if (product.stock < item.quantity) {
+      if (item.type === "product" && product?.stock < item?.quantity) {
         return res.status(400).json({
           message: `${product.title} is out of stock`,
         });
       }
       let unitPrice = Number(product?.price);
 
-      if (Array.isArray(product?.variantPrices) && item?.variant) {
+      if (
+        item.type === "product" &&
+        Array.isArray(product?.variantPrices) &&
+        item?.variant
+      ) {
         const matchedVariant = product.variantPrices.find((v) => {
           const sizeMatch = v.size === String(item.variant.size);
           const colorMatch =
@@ -103,15 +126,13 @@ router.post("/initiate", async (req, res) => {
           unitPrice = Number(matchedVariant.price);
         }
       }
-
-      const itemTotal = unitPrice * item.quantity;
+      let itemTotal;
+      if (item.type === "product" || item.type === "literature") {
+        itemTotal = unitPrice * item.quantity;
+      } else if (item.type === "course") {
+        itemTotal = unitPrice;
+      }
       amount += itemTotal;
-
-      //       if (isNaN(unitPrice) || unitPrice <= 0) {
-      //   return res.status(400).json({
-      //     message: `Invalid price for ${product.title}`,
-      //   });
-      // }
 
       orderItems.push({
         productId: product._id,
@@ -120,6 +141,7 @@ router.post("/initiate", async (req, res) => {
         price: unitPrice,
         unit: item.unit || "",
         variant: item.variant || null,
+        itemType: item.type,
       });
     }
 
@@ -145,13 +167,10 @@ router.post("/initiate", async (req, res) => {
         voucherData = { code: voucher.code, discount };
       }
     }
-    let deliveryCharge = 120; // default Outside Dhaka
+    let deliveryCharge = 120; 
 
     if (deliveryArea === "Inside Dhaka") {
       deliveryCharge = 80;
-    }
-    if (deliveryArea === "test") {
-      deliveryCharge = 2;
     }
     amount += deliveryCharge;
 
@@ -172,6 +191,7 @@ router.post("/initiate", async (req, res) => {
     prefix,
     source,
     amount,
+    loggedInUser,
     status: "pending",
     customer: { name, mobile, email, address },
     payload: orderPayload, // raw data if needed later
@@ -223,12 +243,12 @@ router.get("/callback", (req, res) => {
 
   if (status !== "Successful") {
     return res.redirect(
-      `${CLIENT_URL}/payment-failed?invoice=${invoice_number}`,
+      `${CLIENT_URL}/payment-failed?invoice=${invoice_number}&&message=${message}`,
     );
   }
 
   return res.redirect(
-    `${CLIENT_URL}/payment-success?invoice=${invoice_number}`,
+    `${CLIENT_URL}/payment-success?invoice=${invoice_number}&&message=${message}`,
   );
 });
 
@@ -260,12 +280,10 @@ router.post("/finalize-payment", async (req, res) => {
       { $set: { status: "processing" } },
       { returnDocument: "after" },
     );
-
-    if (!paymentResult?.value) {
+    if (!paymentResult) {
       return res.status(200).json({ alreadyProcessed: true });
     }
-    const payment = paymentResult?.value;
-
+    const payment = paymentResult;
     // Verify with PayStation
     const verification = await verifyPayment(invoice_number);
     const v = verification?.data;
@@ -278,7 +296,10 @@ router.post("/finalize-payment", async (req, res) => {
         { invoice: invoice_number, status: "processing" },
         { $set: { status: "pending" } },
       );
-      return res.status(400).json({ message: "Payment verification failed" });
+      return res.status(400).json({
+        message: "Payment verification failed",
+        source: payment?.source,
+      });
     }
 
     //  Mark paid
@@ -316,7 +337,7 @@ router.post("/finalize-payment", async (req, res) => {
       { invoice: invoice_number, status: "paid" },
       { $set: { fulfilled: true, fulfilledAt: new Date() } },
     );
-    return res.status(200).json({ success: true });
+    return res.status(200).json({ success: true, source: payment?.source });
   } catch (error) {
     console.error("Finalize payment error:", error);
     return res.status(500).json({ message: "Finalize failed" });
@@ -481,18 +502,23 @@ const createOrder = async (payment) => {
   }
 
   for (const item of items) {
-    const update = await shopCollection.updateOne(
-      {
-        _id: new ObjectId(item.productId),
-        stockQuantity: { $gte: item.quantity },
-      },
-      {
-        $inc: { stockQuantity: -item.quantity },
-      },
-    );
-
-    if (update.modifiedCount === 0) {
-      throw new Error(`Stock update failed for ${item.productId}`);
+    if (item.itemType === "product") {
+      await shopCollection.updateOne(
+        {
+          _id: new ObjectId(item.productId),
+          stockQuantity: { $gte: item.quantity },
+        },
+        {
+          $inc: { stockQuantity: -item.quantity },
+        },
+      );
+    } else if (item.itemType === "course") {
+      await courseCollection.updateOne(
+        {
+          _id: new ObjectId(item?.productId),
+        },
+        { $addToSet: { students: payment?.loggedInUser?._id } },
+      );
     }
   }
 
@@ -571,85 +597,28 @@ async function sendAdminOrderNotificationEmail(order, transporter) {
   });
 }
 async function sendUserOrderInvoiceEmail(order, transporter) {
-  const renderVariant = (variant, unit) => {
-    const parts = [];
-    if (variant?.size) parts.push(`Size: ${variant.size}`);
-    if (variant?.color) parts.push(`Color: ${variant.color}`);
-    if (unit) parts.push(`Unit: ${unit}`);
-    return parts.length ? ` (${parts.join(", ")})` : "";
-  };
-
-  const itemsHtml = order.items
-    .map(
-      (i) => `
-  <td>
-  ${i.title}${renderVariant(i.variant, i.unit)}
-</td>
-<td align="center">
-  ${i.quantity}${i.unit ? ` ${i.unit}` : ""}
-</td>
-<td align="right">${i.price} BDT</td>
-<td align="right">${i.price * i.quantity} BDT</td>
-
-      `,
-    )
-    .join("");
-
-  const html = `
-    <h2>🧾 Your Order Invoice</h2>
-
-    <p>Hello ${order.customer.name},</p>
-    <p>Thank you for shopping with us. Here is your invoice:</p>
-
-    <p>
-      <strong>Invoice:</strong> ${order.invoice}<br/>
-      <strong>Transaction ID:</strong> ${order.trx_id}<br/>
-      <strong>Payment Method:</strong> ${order.paymentMethod}
-    </p>
-
-    <table width="100%" border="1" cellspacing="0" cellpadding="8">
-      <thead>
-        <tr>
-          <th align="left">Item</th>
-          <th align="center">Qty</th>
-          <th align="right">Unit Price</th>
-          <th align="right">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${itemsHtml}
-      </tbody>
-    </table>
-
-    <p><strong>Delivery Charge:</strong> ${order.deliveryCharge || 0} BDT</p>
-
-    ${
-      order.voucher
-        ? `<p><strong>Discount:</strong> -${order.voucher.discount} BDT</p>`
-        : ""
-    }
-
-    <h3>Total Paid: ${order.totalAmount} BDT</h3>
-
-    <p>
-      Your order is now being processed.  
-      We’ll contact you if any further information is needed.
-    </p>
-
-    <p>
-      <a href="${process.env.SERVER_URL}/api/paystation/invoice/${order.invoice}">
-        View / Print Invoice
-      </a>
-    </p>
-
-    <p>Thank you for choosing SukunLife 💚</p>
-  `;
-
+  const html = generateInvoiceHTML(order);
+  const pdfBuffer = await generateInvoicePDF(html);
   await transporter.sendMail({
     from: '"SukunLife" <no-reply@sukunlife.com>',
     to: order.customer.email,
-    subject: "🧾 Your Order Invoice",
-    html,
+    subject: "🧾 Your Order Invoice - SukunLife",
+    html: `
+      <p>Hello <strong>${order.customer.name}</strong>,</p>
+      <p>Your invoice is attached as a PDF.</p>
+      <p>
+        <a href="${process.env.SERVER_URL}/api/paystation/invoice/${order.invoice}">
+          View invoice online
+        </a>
+      </p>
+    `,
+    attachments: [
+      {
+        filename: `invoice-${order.invoice}.pdf`,
+        content: pdfBuffer,
+        contentType: "application/pdf",
+      },
+    ],
   });
 }
 
