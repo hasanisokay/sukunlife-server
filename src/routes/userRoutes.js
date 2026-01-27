@@ -22,8 +22,6 @@ const usersCollection = db?.collection("users");
 const orderCollection = db?.collection("orders");
 const appointmentReviewCollection = db?.collection("appointment-reviews");
 
-
-
 router.put("/update-user-info", lowUserOnlyMiddleware, async (req, res) => {
   try {
     const body = req.body;
@@ -36,7 +34,7 @@ router.put("/update-user-info", lowUserOnlyMiddleware, async (req, res) => {
     if (newPassword) {
       const user = await usersCollection.findOne(
         { _id: new ObjectId(req?.user?._id) },
-        { projection: { _id: 1, password: 1 } }
+        { projection: { _id: 1, password: 1 } },
       );
       if (!user || !(await bcrypt.compare(currentPassword, user?.password))) {
         return res
@@ -49,7 +47,7 @@ router.put("/update-user-info", lowUserOnlyMiddleware, async (req, res) => {
     }
     const result = await usersCollection.updateOne(
       { _id: new ObjectId(req?.user?._id) },
-      { $set: updatedItems }
+      { $set: updatedItems },
     );
     if (result.modifiedCount > 0) {
       return res
@@ -75,7 +73,7 @@ router.get(
       const result = await courseCollection
         .find(
           { students: userId },
-          { projection: { _id: 1, title: 1, courseId: 1, coverPhotoUrl: 1 } }
+          { projection: { _id: 1, title: 1, courseId: 1, coverPhotoUrl: 1 } },
         )
         .toArray();
       if (result) {
@@ -98,7 +96,7 @@ router.get(
         error: error.message,
       });
     }
-  }
+  },
 );
 
 router.get(
@@ -112,7 +110,7 @@ router.get(
           courseId,
           students: req?.user?._id,
         },
-        { projection: { _id: 1 } }
+        { projection: { _id: 1 } },
       );
       if (!courseInfo) {
         return res.status(404).json({
@@ -120,16 +118,14 @@ router.get(
           status: 404,
         });
       }
-
       const isEnrolled = await usersCollection.findOne(
         {
-          _id: new ObjectId(req?.user?._id),
-          "enrolledCourses.courseId": courseInfo._id.toString(),
+          _id: new ObjectId(req.user._id),
+          enrolledCourses: courseInfo._id.toString(),
         },
-        {
-          projection: { _id: 1 },
-        }
+        { projection: { _id: 1 } },
       );
+
       if (!isEnrolled) {
         return res.status(404).json({
           message: "No course found.",
@@ -157,7 +153,7 @@ router.get(
         error: error.message,
       });
     }
-  }
+  },
 );
 
 router.put("/update-progress", lowUserOnlyMiddleware, async (req, res) => {
@@ -189,7 +185,7 @@ router.put("/update-progress", lowUserOnlyMiddleware, async (req, res) => {
         $set: {
           "enrolledCourses.$.lastSync": progress, // Update lastSync for the matched course
         },
-      }
+      },
     );
 
     // Check if any document was updated
@@ -231,7 +227,7 @@ router.get("/user-orders", strictUserOnlyMiddleware, async (req, res) => {
           message: "No appointment found of this user.",
         });
       }
-    } else if (countOnly==='true') {
+    } else if (countOnly === "true") {
       const orderCount = await orderCollection.countDocuments({ userId });
       const appointmentCount = await appointmentCollection.countDocuments({
         "loggedInUser._id": userId,
@@ -264,7 +260,6 @@ router.get("/user-orders", strictUserOnlyMiddleware, async (req, res) => {
   }
 });
 
-
 router.post(
   "/appointment-review",
   strictUserOnlyMiddleware,
@@ -289,11 +284,11 @@ router.post(
       };
       await appointmentCollection.updateOne(
         { _id: new ObjectId(appointmentId) },
-        { $set: { reviewed: true } }
+        { $set: { reviewed: true } },
       );
 
       const result = await appointmentReviewCollection.insertOne(review);
-      
+
       res.status(200).json({
         success: true,
         message: "Review submitted successfully",
@@ -308,7 +303,7 @@ router.post(
         message: "Failed to submit review",
       });
     }
-  }
+  },
 );
 router.post("/submit-review", async (req, res) => {
   const { productId, orderId, type, userId, name, comment, rating } = req.body;
@@ -331,7 +326,7 @@ router.post("/submit-review", async (req, res) => {
     // Update the orderCollection to mark the product as reviewed
     const orderUpdateResult = await orderCollection.updateOne(
       { _id: new ObjectId(orderId), "cartItems._id": productId },
-      { $set: { "cartItems.$.reviewed": true } }
+      { $set: { "cartItems.$.reviewed": true } },
     );
 
     if (orderUpdateResult.modifiedCount === 0) {
@@ -353,7 +348,7 @@ router.post("/submit-review", async (req, res) => {
     if (type === "product") {
       const shopUpdateResult = await shopCollection.updateOne(
         { _id: new ObjectId(productId) },
-        { $push: { reviews: review } }
+        { $push: { reviews: review } },
       );
 
       if (shopUpdateResult.modifiedCount === 0) {
@@ -365,7 +360,7 @@ router.post("/submit-review", async (req, res) => {
     } else if (type === "course") {
       const courseUpdateResult = await courseCollection.updateOne(
         { _id: new ObjectId(productId) },
-        { $push: { reviews: review } }
+        { $push: { reviews: review } },
       );
 
       if (courseUpdateResult.modifiedCount === 0) {
@@ -401,14 +396,12 @@ router.post(
   (req, res) => {
     const type = req.file._fileType;
 
-
     const limits = {
       image: 50 * 1024 * 1024, //50mb for img
       audio: 200 * 1024 * 1024, //200 mb for audio
       video: 1000 * 1024 * 1024, //1000mb for video
       pdf: 50 * 1024 * 1024, //50mb for pdf
     };
-
 
     if (req.file.size > limits[type]) {
       return res.status(400).json({
@@ -425,11 +418,10 @@ router.post(
     const url = `https://cdn.sukunlife.com/${folder}/${req.file.filename}`;
 
     res.json({ url, type });
-  }
-)
+  },
+);
 
 //video stream for course. not implemented yet.
-
 
 router.get(
   "/course/video/:videoId",
@@ -451,10 +443,7 @@ router.get(
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const videoPath = path.join(
-      "/data/uploads/private/videos",
-      video.filename
-    );
+    const videoPath = path.join("/data/uploads/private/videos", video.filename);
 
     const stat = fs.statSync(videoPath);
     const fileSize = stat.size;
@@ -463,9 +452,7 @@ router.get(
     if (range) {
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
-      const end = parts[1]
-        ? parseInt(parts[1], 10)
-        : fileSize - 1;
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
 
       const chunkSize = end - start + 1;
       const stream = fs.createReadStream(videoPath, { start, end });
@@ -486,7 +473,7 @@ router.get(
 
       fs.createReadStream(videoPath).pipe(res);
     }
-  }
+  },
 );
 
 router.get(
@@ -507,17 +494,9 @@ router.get(
     if (!hasAccess) return res.status(403).json({ error: "Access denied" });
 
     const folder =
-      file.type === "video"
-        ? "videos"
-        : file.type === "pdf"
-        ? "pdfs"
-        : "audio";
+      file.type === "video" ? "videos" : file.type === "pdf" ? "pdfs" : "audio";
 
-    const filePath = path.join(
-      "/data/uploads/private",
-      folder,
-      file.filename
-    );
+    const filePath = path.join("/data/uploads/private", folder, file.filename);
 
     const stat = fs.statSync(filePath);
     const fileSize = stat.size;
@@ -543,8 +522,7 @@ router.get(
       res.setHeader("Content-Type", file.mime);
       fs.createReadStream(filePath).pipe(res);
     }
-  }
+  },
 );
-
 
 export default router;

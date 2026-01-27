@@ -20,6 +20,7 @@ const shopCollection = db?.collection("shop");
 const voucherCollection = db?.collection("vouchers");
 const orderCollection = db?.collection("orders");
 const resourceCollection = db?.collection("resources");
+const usersCollection = db?.collection("users");
 
 const CLIENT_URL = process.env.CLIENT_URL;
 let transporter = nodemailer.createTransport({
@@ -167,7 +168,7 @@ router.post("/initiate", async (req, res) => {
         voucherData = { code: voucher.code, discount };
       }
     }
-    let deliveryCharge = 120; 
+    let deliveryCharge = 120;
 
     if (deliveryArea === "Inside Dhaka") {
       deliveryCharge = 80;
@@ -518,6 +519,12 @@ const createOrder = async (payment) => {
           _id: new ObjectId(item?.productId),
         },
         { $addToSet: { students: payment?.loggedInUser?._id } },
+      );
+      await usersCollection.updateOne(
+        {
+          _id: new ObjectId(payment?.loggedInUser?._id),
+        },
+        { $addToSet: { enrolledCourses: productId } },
       );
     }
   }
