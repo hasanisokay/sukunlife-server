@@ -51,7 +51,6 @@ router.post("/login", async (req, res) => {
         .status(401)
         .json({ message: "Invalid credentials", status: 401 });
     }
-  
 
     const sessionId = uuidv4();
     await sessionsCollection.insertOne({
@@ -75,6 +74,24 @@ router.post("/login", async (req, res) => {
 
     const refreshToken = jwt.sign(refreshTokenPayload, REFRESH_SECRET_KEY, {
       expiresIn: REFRESH_EXPIRATION,
+    });
+
+    res.cookie("ACCESS_TOKEN", accessToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      domain: isProduction ? ".sukunlife.com" : undefined,
+      maxAge: 2 * 60 * 60 * 1000,
+      path: "/",
+    });
+
+    res.cookie("REFRESH_TOKEN", refreshToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      domain: isProduction ? ".sukunlife.com" : undefined,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: "/",
     });
 
     return res.status(200).json({
@@ -181,7 +198,7 @@ router.post("/signup", async (req, res) => {
     await usersCollection.insertOne(newUser);
     return res.status(201).json({ message: "Signup successful", status: 200 });
   } catch (error) {
-    console.log(error)
+    console.log(error);
     return res
       .status(500)
       .json({ message: "Server error", error, status: 500 });
@@ -197,7 +214,7 @@ router.post("/request-otp", async (req, res) => {
       {
         $or: [{ email: userIdentifier }, { mobile: userIdentifier }],
       },
-      { projection: { _id: 1, name: 1, email: 1 } }
+      { projection: { _id: 1, name: 1, email: 1 } },
     );
 
     if (!user) {
@@ -222,7 +239,7 @@ router.post("/request-otp", async (req, res) => {
       user.email,
       user?.name,
       otp,
-      transporter
+      transporter,
     );
     if (isEmailSend.status === 200) {
       return res
@@ -242,9 +259,12 @@ router.post("/request-otp", async (req, res) => {
 router.post("/verify-otp", async (req, res) => {
   const { userIdentifier, otp } = req.body;
   try {
-    const user = await usersCollection.findOne({
-      $or: [{ email: userIdentifier }, { mobile: userIdentifier }],
-    },{projection:{_id:1}});
+    const user = await usersCollection.findOne(
+      {
+        $or: [{ email: userIdentifier }, { mobile: userIdentifier }],
+      },
+      { projection: { _id: 1 } },
+    );
 
     if (!user) {
       return res.status(404).json({ message: "User not found", status: 404 });
@@ -270,10 +290,13 @@ router.post("/verify-otp", async (req, res) => {
 // Reset Password
 router.post("/reset-password", async (req, res) => {
   try {
-    const { userIdentifier, otp, newPassword  } = req.body;
-    const user = await usersCollection.findOne({
-      $or: [{ email: userIdentifier }, { mobile: userIdentifier }],
-    },{projection:{_id:1}});
+    const { userIdentifier, otp, newPassword } = req.body;
+    const user = await usersCollection.findOne(
+      {
+        $or: [{ email: userIdentifier }, { mobile: userIdentifier }],
+      },
+      { projection: { _id: 1 } },
+    );
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     const storedOtp = await otpCollection.findOne({
       userId: user._id,
@@ -281,7 +304,9 @@ router.post("/reset-password", async (req, res) => {
     });
 
     if (!storedOtp || storedOtp.expiresAt < new Date()) {
-      return res.status(400).json({ message: "Invalid or expired OTP" , status:400 });
+      return res
+        .status(400)
+        .json({ message: "Invalid or expired OTP", status: 400 });
     }
 
     // Clean up the OTP after successful verification
@@ -291,16 +316,20 @@ router.post("/reset-password", async (req, res) => {
       {
         $or: [{ email: userIdentifier }, { mobile: userIdentifier }],
       },
-      { $set: { password: hashedPassword } }
+      { $set: { password: hashedPassword } },
     );
 
     if (result.matchedCount === 0) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    return res.status(200).json({ message: "Password reset successfully", status:200 });
+    return res
+      .status(200)
+      .json({ message: "Password reset successfully", status: 200 });
   } catch (error) {
-    return res.status(500).json({ message: "Server error", error, status:500 });
+    return res
+      .status(500)
+      .json({ message: "Server error", error, status: 500 });
   }
 });
 
@@ -369,7 +398,7 @@ router.post("/refresh", async (req, res) => {
         .json({ message: "Blocked by admin. Contact Support.", status: 403 });
     }
 
-    const { password:_,cart, enrolledCourses, ...userForPayload } = user;
+    const { password: _, cart, enrolledCourses, ...userForPayload } = user;
     const accessTokenPayload = {
       user: userForPayload,
     };
@@ -379,7 +408,7 @@ router.post("/refresh", async (req, res) => {
       ACCESS_TOKEN_SECRET_KEY,
       {
         expiresIn: ACCESS_EXPIRATION,
-      }
+      },
     );
 
     // Update cookies for web clients
