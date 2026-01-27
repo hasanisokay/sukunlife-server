@@ -7,8 +7,8 @@ import convertDateToDateObject from "../utils/convertDateToDateObject.mjs";
 import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
 import nodemailer from "nodemailer";
 import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
-import { generateInvoicePDF } from "../utils/generateInvoicePDF.mjs";
-import { generateInvoiceHTML } from "../utils/generateInvoiceHtml.mjs";
+import { generateInvoicePDF } from "../utils/generateInvoicePDF.js";
+import { generateInvoiceHTML } from "../utils/generateInvoiceHTML.js";
 
 const router = express.Router();
 const db = await dbConnect();
