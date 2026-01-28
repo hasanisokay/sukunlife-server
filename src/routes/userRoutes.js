@@ -429,7 +429,7 @@ router.get(
     const { courseId, videoId } = req.params;
     // const userId = req.user._id.toString();
     const userId = req?.user?._id?.toString() || "69784bb7843705c35aa436e9";
-
+// testing currently. no auth needed
     const course = await courseCollection.findOne({ courseId });
     if (!course) return res.status(404).json({ error: "Course not found" });
 

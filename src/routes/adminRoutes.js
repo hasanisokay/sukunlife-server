@@ -1486,6 +1486,7 @@ router.post(
   async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file" });
     const { status } = req.body;
+    
     // non-video
     if (!req.file.mimetype.startsWith("video/")) {
       return res.json({
@@ -1507,7 +1508,6 @@ router.post(
 
     const keyPath = path.join(baseDir, "key.key");
     const keyInfoPath = path.join(baseDir, "keyinfo.txt");
-    const playlistPath = path.join(baseDir, "index.m3u8");
 
     let hlsKeyArgs = "";
 
@@ -1520,33 +1520,76 @@ router.post(
       hlsKeyArgs = `-hls_key_info_file "${keyInfoPath}"`;
     }
 
+    // FIXED FFmpeg command with proper quality levels
     const cmd = `
 ffmpeg -y -i "${inputPath}" \
 -filter_complex "
 [0:v]split=2[v1][v2];
-[v1]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2[v720];
-[v2]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[v1080]
+[v1]scale=w=1280:h=720:force_original_aspect_ratio=decrease[v720];
+[v2]scale=w=1920:h=1080:force_original_aspect_ratio=decrease[v1080]
 " \
--map "[v720]" -map 0:a \
--map "[v1080]" -map 0:a \
--c:v libx264 -profile:v main -pix_fmt yuv420p -preset veryfast -crf 23 \
--b:v:0 3000k -maxrate:v:0 4000k -bufsize:v:0 8000k \
--b:v:1 5000k -maxrate:v:1 7000k -bufsize:v:1 14000k \
--c:a aac -b:a 128k \
--g 180 -keyint_min 180 -sc_threshold 0 \
--force_key_frames "expr:gte(t,n_forced*6)" \
+-map "[v720]" -c:v:0 libx264 -preset veryfast -crf 23 -b:v:0 2500k -maxrate:v:0 3500k -bufsize:v:0 7000k \
+-map "[v1080]" -c:v:1 libx264 -preset veryfast -crf 23 -b:v:1 5000k -maxrate:v:1 7000k -bufsize:v:1 14000k \
+-map 0:a -c:a:0 aac -b:a:0 128k \
+-map 0:a -c:a:1 aac -b:a:1 128k \
+-f hls \
 -hls_time 6 \
 -hls_playlist_type vod \
+-hls_flags independent_segments \
+-hls_segment_type mpegts \
+-g 180 -keyint_min 180 -sc_threshold 0 \
 ${hlsKeyArgs} \
 -hls_segment_filename "${baseDir}/%v/seg_%03d.ts" \
 -master_pl_name master.m3u8 \
--var_stream_map "v:0,a:0 v:1,a:1" \
+-var_stream_map "v:0,a:0,name:720p v:1,a:1,name:1080p" \
+-hls_list_size 0 \
 "${baseDir}/%v/index.m3u8"
 `;
 
     videoJobs[videoId] = { status: "queued", percent: 0 };
 
     addJob(videoId, cmd, async () => {
+      // After encoding completes, verify and fix master playlist if needed
+      try {
+        const masterPath = path.join(baseDir, "master.m3u8");
+        let masterContent = fs.readFileSync(masterPath, "utf8");
+        
+        console.log("Generated master playlist:", masterContent);
+        
+        // Ensure RESOLUTION tags are present
+        if (!masterContent.includes("RESOLUTION")) {
+          console.log("Adding missing RESOLUTION tags to master playlist");
+          
+          // Fix 720p stream
+          masterContent = masterContent.replace(
+            /(#EXT-X-STREAM-INF:[^\n]*)\n(0\/index\.m3u8)/g,
+            (match, inf, path) => {
+              if (!inf.includes("RESOLUTION")) {
+                inf += ",RESOLUTION=1280x720,FRAME-RATE=30.000";
+              }
+              return `${inf}\n${path}`;
+            }
+          );
+          
+          // Fix 1080p stream
+          masterContent = masterContent.replace(
+            /(#EXT-X-STREAM-INF:[^\n]*)\n(1\/index\.m3u8)/g,
+            (match, inf, path) => {
+              if (!inf.includes("RESOLUTION")) {
+                inf += ",RESOLUTION=1920x1080,FRAME-RATE=30.000";
+              }
+              return `${inf}\n${path}`;
+            }
+          );
+          
+          fs.writeFileSync(masterPath, masterContent);
+          console.log("Fixed master playlist:", masterContent);
+        }
+      } catch (err) {
+        console.error("Error fixing master playlist:", err);
+      }
+      
+      // Clean up original file
       fs.promises.unlink(inputPath).catch(console.error);
     });
 
