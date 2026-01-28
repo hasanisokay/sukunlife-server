@@ -548,13 +548,27 @@ router.get(
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
     const { courseId, videoId } = req.params;
-    const file = req.params[0]; // Can be: master.m3u8, 720p/index.m3u8, 720p/seg_001.ts, etc.
+    const file = req.params[0];
     const { token } = req.query;
 
     console.log(`Streaming request: ${file}`);
 
+    // CORS headers - MUST be set before any response
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Range");
+    res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range");
+
+    // Handle preflight
+    if (req.method === "OPTIONS") {
+      return res.status(200).end();
+    }
+
     const course = await courseCollection.findOne({ courseId });
-    if (!course) return res.status(404).end("Course not found");
+    if (!course) {
+      console.error("Course not found:", courseId);
+      return res.status(404).end("Course not found");
+    }
 
     let videoItem = null;
     for (const module of course.modules) {
@@ -567,17 +581,29 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       if (videoItem) break;
     }
 
-    if (!videoItem) return res.status(404).end("Video not found");
+    if (!videoItem) {
+      console.error("Video not found:", videoId);
+      return res.status(404).end("Video not found");
+    }
 
     const isPublic = videoItem.status === "public";
 
     if (!isPublic) {
-      if (!token) return res.status(403).end("Missing token");
+      if (!token) {
+        console.error("Missing token for private video");
+        return res.status(403).end("Missing token");
+      }
 
-      const decoded = Buffer.from(token, "base64url").toString();
-      const userId = decoded.split("|")[0];
+      try {
+        const decoded = Buffer.from(token, "base64url").toString();
+        const userId = decoded.split("|")[0];
 
-      if (!verifyHLSToken(token, userId, courseId, videoId)) {
+        if (!verifyHLSToken(token, userId, courseId, videoId)) {
+          console.error("Invalid token");
+          return res.status(403).end("Invalid token");
+        }
+      } catch (err) {
+        console.error("Token verification error:", err);
         return res.status(403).end("Invalid token");
       }
     }
@@ -587,6 +613,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
 
     // Path traversal protection
     if (!filePath.startsWith(basePath)) {
+      console.error("Path traversal attempt:", filePath);
       return res.status(403).end("Invalid path");
     }
 
@@ -601,10 +628,10 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
 
       // Debug log
       if (file === "master.m3u8") {
-        console.log("Serving master playlist:", playlist);
+        console.log("✅ Serving master playlist successfully");
       }
 
-      if (!isPublic) {
+      if (!isPublic && token) {
         // Rewrite .ts segment URLs
         playlist = playlist.replace(/(seg_\d+\.ts)/g, `$1?token=${token}`);
         
@@ -619,9 +646,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       }
 
       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-      res.setHeader("Cache-Control", "no-store");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Headers", "*");
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
       return res.send(playlist);
     }
 
@@ -629,18 +654,17 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     if (file.endsWith(".ts")) {
       res.setHeader("Content-Type", "video/mp2t");
       res.setHeader("Cache-Control", "no-store");
-      res.setHeader("Access-Control-Allow-Origin", "*");
       return fs.createReadStream(filePath).pipe(res);
     }
 
     // Other files
+    console.error("Unsupported file type:", file);
     res.status(404).end("Unsupported file type");
   } catch (err) {
-    console.error("Streaming error:", err);
+    console.error("❌ Streaming error:", err);
     res.status(500).end("Server error");
   }
 });
-
 router.get("/course/key/:videoId", async (req, res) => {
   try {
     const { videoId } = req.params;
