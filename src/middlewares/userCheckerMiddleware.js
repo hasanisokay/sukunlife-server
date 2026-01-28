@@ -5,7 +5,6 @@ const userCheckerMiddleware = (req, res, next) => {
   try {
     const cookies = cookie.parse(req?.headers?.cookie || "");
     const accessToken = cookies?.acs_token || req?.headers?.authorization?.split(' ')[1];
-    console.log({accessToken})
     if (!accessToken) {
       req.user = null;
       return next();

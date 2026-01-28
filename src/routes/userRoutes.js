@@ -503,24 +503,27 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     const { courseId, videoId } = req.params;
     const file = req.params[0]; // 0/index.m3u8 or 1/seg_001.ts
     const { token } = req.query;
-
+console.log('token missing')
     if (!token) return res.status(403).end("Missing token");
 
     const decoded = Buffer.from(token, "base64url").toString();
     const userId = decoded.split("|")[0];
 
     if (!verifyHLSToken(token, userId, courseId, videoId)) {
+      console.log('invalid oken not verifying token')
       return res.status(403).end("Invalid token");
     }
 
     const basePath = path.join("/data/uploads/private/videos", videoId);
     const filePath = path.join(basePath, file);
-
+console.log({filePath})
     if (!filePath.startsWith(basePath)) {
+      console.log("Invalid path")
       return res.status(403).end("Invalid path");
     }
 
     if (!fs.existsSync(filePath)) {
+      console.log('not found')
       return res.status(404).end("Not found");
     }
 
