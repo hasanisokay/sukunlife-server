@@ -476,14 +476,15 @@ router.post(
 
 router.get(
   "/course/stream-url/:courseId/:videoId",
-  strictUserOnlyMiddleware,
+  // strictUserOnlyMiddleware,
   async (req, res) => {
     const { courseId, videoId } = req.params;
-    const userId = req.user._id.toString();
-
+    // const userId = req.user._id.toString();
+    const userId = '6979e06c8248326842961fe6'
+// todo: uncomment middleware logics
     const course = await courseCollection.findOne({
       courseId,
-      students: req.user._id,
+      // students: req.user._id,
     });
 
     if (!course) return res.status(403).json({ error: "Access denied" });
@@ -491,7 +492,7 @@ router.get(
     const token = createHLSToken(userId, courseId, videoId);
 
     res.json({
-      url: `${process.env.API_URL}/api/user/course/stream/${courseId}/${videoId}/index.m3u8?token=${token}`,
+      url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/index.m3u8?token=${token}`,
     });
   }
 );
@@ -508,7 +509,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     const decoded = Buffer.from(token, "base64url").toString();
     const userId = decoded.split("|")[0];
 
-    if (!verifyHLSToke(token, userId, courseId, videoId)) {
+    if (!verifyHLSToken(token, userId, courseId, videoId)) {
       return res.status(403).end("Invalid token");
     }
 
