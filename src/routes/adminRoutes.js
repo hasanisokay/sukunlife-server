@@ -1529,7 +1529,7 @@ ffmpeg -y -i "${inputPath}" \
 " \
 -map "[v720]" -map 0:a \
 -map "[v1080]" -map 0:a \
--c:v libx264 -preset veryfast -crf 23 \
+-c:v libx264 -profile:v main -pix_fmt yuv420p -preset veryfast -crf 23 \
 -b:v:0 3000k -maxrate:v:0 4000k -bufsize:v:0 8000k \
 -b:v:1 5000k -maxrate:v:1 7000k -bufsize:v:1 14000k \
 -c:a aac -b:a 128k \
