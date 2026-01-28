@@ -1549,5 +1549,13 @@ ffmpeg -y -i "${inputPath}" \
     });
   }
 );
+router.get("/course/video-status/:videoId", (req, res) => {
+  const job = videoJobs[req.params.videoId];
 
+  if (!job) {
+    return res.status(404).json({ error: "Unknown video" });
+  }
+
+  res.json(job);
+});
 export default router;

@@ -430,15 +430,7 @@ router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
-router.get("/course/video-status/:videoId", (req, res) => {
-  const job = videoJobs[req.params.videoId];
 
-  if (!job) {
-    return res.status(404).json({ error: "Unknown video" });
-  }
-
-  res.json(job);
-});
 
 
 export default router;
