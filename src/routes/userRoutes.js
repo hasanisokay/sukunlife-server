@@ -548,8 +548,10 @@ router.get(
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
     const { courseId, videoId } = req.params;
-    const file = req.params[0];
+    const file = req.params[0]; // Can be: master.m3u8, 720p/index.m3u8, 720p/seg_001.ts, etc.
     const { token } = req.query;
+
+    console.log(`Streaming request: ${file}`);
 
     const course = await courseCollection.findOne({ courseId });
     if (!course) return res.status(404).end("Course not found");
@@ -583,33 +585,36 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     const basePath = path.join("/data/uploads/private/videos", videoId);
     const filePath = path.join(basePath, file);
 
+    // Path traversal protection
     if (!filePath.startsWith(basePath)) {
       return res.status(403).end("Invalid path");
     }
 
     if (!fs.existsSync(filePath)) {
-      return res.status(404).end("Not found");
+      console.error(`File not found: ${filePath}`);
+      return res.status(404).end("File not found");
     }
 
-    // Handle playlists
+    // Handle playlists (.m3u8)
     if (file.endsWith(".m3u8")) {
       let playlist = fs.readFileSync(filePath, "utf8");
 
-      // Debug log for master playlist
+      // Debug log
       if (file === "master.m3u8") {
         console.log("Serving master playlist:", playlist);
       }
 
       if (!isPublic) {
-        // Rewrite URLs with token
-        playlist = playlist.replace(/(seg_[^"\n]+\.ts)/g, `$1?token=${token}`);
-        playlist = playlist.replace(/(\d+\/index\.m3u8)/g, `$1?token=${token}`);
+        // Rewrite .ts segment URLs
+        playlist = playlist.replace(/(seg_\d+\.ts)/g, `$1?token=${token}`);
+        
+        // Rewrite variant playlist URLs (720p/index.m3u8, 1080p/index.m3u8)
+        playlist = playlist.replace(/(720p\/index\.m3u8|1080p\/index\.m3u8)/g, `$1?token=${token}`);
+        
+        // Rewrite encryption key URI if present
         playlist = playlist.replace(
           /(URI=")([^"]+)(")/g,
-          (match, p1, uri, p3) => {
-            // Add token to encryption key URI
-            return `${p1}${uri}?token=${token}${p3}`;
-          }
+          (match, p1, uri, p3) => `${p1}${uri}?token=${token}${p3}`
         );
       }
 
@@ -620,13 +625,18 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       return res.send(playlist);
     }
 
-    // TS segment
-    res.setHeader("Content-Type", "video/mp2t");
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    fs.createReadStream(filePath).pipe(res);
+    // Handle .ts segments
+    if (file.endsWith(".ts")) {
+      res.setHeader("Content-Type", "video/mp2t");
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      return fs.createReadStream(filePath).pipe(res);
+    }
+
+    // Other files
+    res.status(404).end("Unsupported file type");
   } catch (err) {
-    console.error(err);
+    console.error("Streaming error:", err);
     res.status(500).end("Server error");
   }
 });

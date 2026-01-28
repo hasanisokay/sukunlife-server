@@ -1501,10 +1501,11 @@ router.post(
     const baseDir = path.join("/data/uploads/private/videos", videoId);
     fs.mkdirSync(baseDir, { recursive: true });
 
-    const v0 = path.join(baseDir, "0");
-    const v1 = path.join(baseDir, "1");
-    fs.mkdirSync(v0, { recursive: true });
-    fs.mkdirSync(v1, { recursive: true });
+    // Create folders that match the playlist names
+    const v720p = path.join(baseDir, "720p");
+    const v1080p = path.join(baseDir, "1080p");
+    fs.mkdirSync(v720p, { recursive: true });
+    fs.mkdirSync(v1080p, { recursive: true });
 
     const keyPath = path.join(baseDir, "key.key");
     const keyInfoPath = path.join(baseDir, "keyinfo.txt");
@@ -1520,7 +1521,7 @@ router.post(
       hlsKeyArgs = `-hls_key_info_file "${keyInfoPath}"`;
     }
 
-    // FIXED FFmpeg command with proper quality levels
+    // FIXED: Use named variants that match folder names
     const cmd = `
 ffmpeg -y -i "${inputPath}" \
 -filter_complex "
@@ -1549,54 +1550,24 @@ ${hlsKeyArgs} \
     videoJobs[videoId] = { status: "queued", percent: 0 };
 
     addJob(videoId, cmd, async () => {
-      // After encoding completes, verify and fix master playlist if needed
-      try {
-        const masterPath = path.join(baseDir, "master.m3u8");
-        let masterContent = fs.readFileSync(masterPath, "utf8");
-        
-        console.log("Generated master playlist:", masterContent);
-        
-        // Ensure RESOLUTION tags are present
-        if (!masterContent.includes("RESOLUTION")) {
-          console.log("Adding missing RESOLUTION tags to master playlist");
-          
-          // Fix 720p stream
-          masterContent = masterContent.replace(
-            /(#EXT-X-STREAM-INF:[^\n]*)\n(0\/index\.m3u8)/g,
-            (match, inf, path) => {
-              if (!inf.includes("RESOLUTION")) {
-                inf += ",RESOLUTION=1280x720,FRAME-RATE=30.000";
-              }
-              return `${inf}\n${path}`;
-            }
-          );
-          
-          // Fix 1080p stream
-          masterContent = masterContent.replace(
-            /(#EXT-X-STREAM-INF:[^\n]*)\n(1\/index\.m3u8)/g,
-            (match, inf, path) => {
-              if (!inf.includes("RESOLUTION")) {
-                inf += ",RESOLUTION=1920x1080,FRAME-RATE=30.000";
-              }
-              return `${inf}\n${path}`;
-            }
-          );
-          
-          fs.writeFileSync(masterPath, masterContent);
-          console.log("Fixed master playlist:", masterContent);
-        }
-      } catch (err) {
-        console.error("Error fixing master playlist:", err);
-      }
-      
-      // Clean up original file
+      // Clean up original file after encoding
       fs.promises.unlink(inputPath).catch(console.error);
+      
+      // Log success
+      console.log(`Video ${videoId} processing completed`);
+      
+      // Verify master playlist exists
+      const masterPath = path.join(baseDir, "master.m3u8");
+      if (fs.existsSync(masterPath)) {
+        const content = fs.readFileSync(masterPath, "utf8");
+        console.log("Final master playlist:", content);
+      }
     });
 
     res.json({
       message: "Video uploaded. Processing started.",
       videoId,
-      filename: videoId, // frontend needs this
+      filename: videoId,
     });
   },
 );
