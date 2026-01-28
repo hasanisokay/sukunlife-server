@@ -478,17 +478,35 @@ router.get(
   "/course/stream-url/:courseId/:videoId",
   // strictUserOnlyMiddleware,
   async (req, res) => {
+    // todo:uncomment middleware and userId
     const { courseId, videoId } = req.params;
     // const userId = req.user._id.toString();
-    const userId = '6979e06c8248326842961fe6'
-// todo: uncomment middleware logics
-    const course = await courseCollection.findOne({
-      courseId,
-      // students: req.user._id,
-    });
+    const userId = req?.user?._id?.toString() || "69784bb7843705c35aa436e9"
 
-    if (!course) return res.status(403).json({ error: "Access denied" });
+    const course = await courseCollection.findOne({ courseId });
+    if (!course) return res.status(404).json({ error: "Course not found" });
 
+    let videoItem = null;
+    for (const module of course.modules) {
+      for (const item of module.items) {
+        if (item.type === "video" && item.url.filename === videoId) {
+          videoItem = item;
+          break;
+        }
+      }
+      if (videoItem) break;
+    }
+
+    if (!videoItem) return res.status(404).json({ error: "Video not found" });
+
+    // public video
+    if (videoItem.status === "public") {
+      return res.json({
+        url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/master.m3u8`,
+      });
+    }
+
+    // private video
     const token = createHLSToken(userId, courseId, videoId);
 
     res.json({
@@ -501,45 +519,68 @@ router.get(
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
     const { courseId, videoId } = req.params;
-    const file = req.params[0]; // 0/index.m3u8 or 1/seg_001.ts
+    const file = req.params[0]; // master.m3u8, 0/index.m3u8, 0/seg_001.ts
     const { token } = req.query;
 
-    if (!token) return res.status(403).end("Missing token");
+    const course = await courseCollection.findOne({ courseId });
+    if (!course) return res.status(404).end("Course not found");
 
-    const decoded = Buffer.from(token, "base64url").toString();
-    const userId = decoded.split("|")[0];
+    // 🔍 find video item in course
+    let videoItem = null;
 
-    if (!verifyHLSToken(token, userId, courseId, videoId)) {
-      console.log('invalid oken not verifying token')
-      return res.status(403).end("Invalid token");
+    for (const module of course.modules) {
+      for (const item of module.items) {
+        if (item.type === "video" && item.url.filename === videoId) {
+          videoItem = item;
+          break;
+        }
+      }
+      if (videoItem) break;
+    }
+
+    if (!videoItem) return res.status(404).end("Video not found");
+
+    const isPublic = videoItem.status === "public";
+
+    // 🔐 private video → verify token
+    if (!isPublic) {
+      if (!token) return res.status(403).end("Missing token");
+
+      const decoded = Buffer.from(token, "base64url").toString();
+      const userId = decoded.split("|")[0];
+
+      if (!verifyHLSToken(token, userId, courseId, videoId)) {
+        return res.status(403).end("Invalid token");
+      }
     }
 
     const basePath = path.join("/data/uploads/private/videos", videoId);
     const filePath = path.join(basePath, file);
-console.log({filePath})
+
+    // path traversal protection
     if (!filePath.startsWith(basePath)) {
-      console.log("Invalid path")
       return res.status(403).end("Invalid path");
     }
 
     if (!fs.existsSync(filePath)) {
-      console.log('not found')
       return res.status(404).end("Not found");
     }
 
-    // M3U8 → inject token
+    // 📜 playlist → inject token for private
     if (file.endsWith(".m3u8")) {
       let playlist = fs.readFileSync(filePath, "utf8");
 
-      playlist = playlist.replace(
-        /(seg_[^"\n]+\.ts)/g,
-        `$1?token=${token}`
-      );
+      if (!isPublic) {
+        playlist = playlist.replace(
+          /(seg_[^"\n]+\.ts)/g,
+          `$1?token=${token}`
+        );
 
-      playlist = playlist.replace(
-        /(key\/[^\n"]+)/g,
-        `$1?token=${token}`
-      );
+        playlist = playlist.replace(
+          /(key\/[^\n"]+)/g,
+          `$1?token=${token}`
+        );
+      }
 
       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
       res.setHeader("Cache-Control", "no-store");
@@ -550,11 +591,13 @@ console.log({filePath})
     res.setHeader("Content-Type", "video/mp2t");
     res.setHeader("Cache-Control", "no-store");
     fs.createReadStream(filePath).pipe(res);
+
   } catch (err) {
     console.error(err);
     res.status(500).end("Server error");
   }
 });
+
 
 router.get("/course/key/:videoId", async (req, res) => {
   try {

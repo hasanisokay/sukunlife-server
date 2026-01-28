@@ -1465,17 +1465,19 @@ router.delete(
   },
 );
 
-router.get("/course/video-status/:videoId", 
+router.get(
+  "/course/video-status/:videoId",
   // strictAdminMiddleware,
   (req, res) => {
-  const job = videoJobs[req.params.videoId];
-//todo: uncomment middleware
-  if (!job) {
-    return res.status(404).json({ error: "Unknown video" });
-  }
+    const job = videoJobs[req.params.videoId];
+    //todo: uncomment middleware
+    if (!job) {
+      return res.status(404).json({ error: "Unknown video" });
+    }
 
-  res.json(job);
-});
+    res.json(job);
+  },
+);
 
 router.post(
   "/course/upload",
@@ -1483,7 +1485,7 @@ router.post(
   uploadPrivateFile.single("file"),
   async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file" });
-
+    const { status } = req.body;
     // non-video
     if (!req.file.mimetype.startsWith("video/")) {
       return res.json({
@@ -1507,11 +1509,16 @@ router.post(
     const keyInfoPath = path.join(baseDir, "keyinfo.txt");
     const playlistPath = path.join(baseDir, "index.m3u8");
 
-    // encryption key
-    fs.writeFileSync(keyPath, crypto.randomBytes(16));
+    let hlsKeyArgs = "";
 
-    const keyUrl = `${process.env.SERVER_URL}/api/user/course/key/${videoId}`;
-    fs.writeFileSync(keyInfoPath, `${keyUrl}\n${keyPath}\n`);
+    if (status === "private") {
+      fs.writeFileSync(keyPath, crypto.randomBytes(16));
+
+      const keyUrl = `${process.env.SERVER_URL}/api/user/course/key/${videoId}`;
+      fs.writeFileSync(keyInfoPath, `${keyUrl}\n${keyPath}\n`);
+
+      hlsKeyArgs = `-hls_key_info_file "${keyInfoPath}"`;
+    }
 
     const cmd = `
 ffmpeg -y -i "${inputPath}" \
@@ -1530,7 +1537,7 @@ ffmpeg -y -i "${inputPath}" \
 -force_key_frames "expr:gte(t,n_forced*6)" \
 -hls_time 6 \
 -hls_playlist_type vod \
--hls_key_info_file "${keyInfoPath}" \
+${hlsKeyArgs} \
 -hls_segment_filename "${baseDir}/%v/seg_%03d.ts" \
 -master_pl_name master.m3u8 \
 -var_stream_map "v:0,a:0 v:1,a:1" \
@@ -1547,76 +1554,6 @@ ffmpeg -y -i "${inputPath}" \
       message: "Video uploaded. Processing started.",
       videoId,
       filename: videoId, // frontend needs this
-    });
-  },
-);
-
-router.post(
-  "/course/public/upload",
-  uploadPublicVideo.single("file"),
-  async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: "No file" });
-
-    // non-video → just store
-    if (!req.file.mimetype.startsWith("video/")) {
-      return res.json({
-        message: "File uploaded",
-        filename: req.file.filename,
-        mime: req.file.mimetype,
-      });
-    }
-
-    const inputPath = req.file.path; // temp upload
-    const videoId = path.basename(inputPath, path.extname(inputPath));
-
-    // ALWAYS STORE IN PRIVATE
-    const baseDir = path.join("/data/uploads/private/videos", videoId);
-    fs.mkdirSync(baseDir, { recursive: true });
-
-    const v0 = path.join(baseDir, "0");
-    const v1 = path.join(baseDir, "1");
-    fs.mkdirSync(v0, { recursive: true });
-    fs.mkdirSync(v1, { recursive: true });
-
-    const cmd = `
-ffmpeg -y -i "${inputPath}" \
--filter_complex "
-[0:v]split=2[v1][v2];
-[v1]scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2[v720];
-[v2]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[v1080]
-" \
--map "[v720]" -map 0:a \
--map "[v1080]" -map 0:a \
--c:v libx264 -preset veryfast -crf 23 \
--b:v:0 3000k -maxrate:v:0 4000k -bufsize:v:0 8000k \
--b:v:1 5000k -maxrate:v:1 7000k -bufsize:v:1 14000k \
--c:a aac -b:a 128k \
--g 180 -keyint_min 180 -sc_threshold 0 \
--force_key_frames "expr:gte(t,n_forced*6)" \
--hls_time 6 \
--hls_playlist_type vod \
--hls_segment_filename "${baseDir}/%v/seg_%03d.ts" \
--master_pl_name master.m3u8 \
--var_stream_map "v:0,a:0 v:1,a:1" \
-"${baseDir}/%v/index.m3u8"
-`;
-
-    // ✅ init job
-    videoJobs[videoId] = {
-      status: "queued",
-      percent: 0,
-      startedAt: Date.now(),
-    };
-
-    // ✅ queue it
-    addJob(videoId, cmd, async () => {
-      await fs.promises.unlink(inputPath).catch(console.error);
-    });
-
-    res.json({
-      message: "Public video uploaded. Processing started.",
-      videoId,
-      type: "video",
     });
   },
 );
