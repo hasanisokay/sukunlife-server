@@ -2,7 +2,6 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 
-
 import dbConnect from "../config/db.mjs";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
@@ -10,7 +9,7 @@ import { ObjectId } from "mongodb";
 import lowUserOnlyMiddleware from "../middlewares/lowUserOnlyMiddleware.js";
 import strictUserOnlyMiddleware from "../middlewares/strictUserOnlyMiddleware.mjs";
 import { uploadPublicFile } from "../middlewares/upload.middleware.js";
-import {createHLSToken, verifyHLSToken} from "../utils/hlsToken.js"
+import { createHLSToken, verifyHLSToken } from "../utils/hlsToken.js";
 const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
@@ -422,58 +421,6 @@ router.post(
   },
 );
 
-
-
-// router.get("/course/stream/:courseId/:videoId/:file", async (req, res) => {
-//   try {
-//     const { courseId, videoId, file } = req.params;
-//     const { token } = req.query;
-
-//     if (!token) return res.status(403).end("Missing token");
-
-//     // extract userId from token itself
-//     const decoded = Buffer.from(token, "base64url").toString();
-//     const userId = decoded.split("|")[0];
-
-//     if (!verifyHLSToken(token, userId, courseId, videoId)) {
-//       return res.status(403).end("Invalid token");
-//     }
-
-//     const basePath = path.join("/data/uploads/private/videos", videoId);
-//     const filePath = path.join(basePath, file);
-
-//     if (!filePath.startsWith(basePath)) {
-//       return res.status(403).end("Invalid path");
-//     }
-
-//     if (!fs.existsSync(filePath)) {
-//       return res.status(404).end("Not found");
-//     }
-
-//     // M3U8 must inject token into segment URLs
-//     if (file.endsWith(".m3u8")) {
-//       let playlist = fs.readFileSync(filePath, "utf8");
-
-//       playlist = playlist.replace(
-//         /(.*\.ts)/g,
-//         `$1?token=${token}`
-//       );
-
-//       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-//       return res.send(playlist);
-//     }
-
-//     // TS segment
-//     res.setHeader("Content-Type", "video/mp2t");
-//     fs.createReadStream(filePath).pipe(res);
-
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).end("Server error");
-//   }
-// });
-
-
 router.get(
   "/course/stream-url/:courseId/:videoId",
   // strictUserOnlyMiddleware,
@@ -481,7 +428,7 @@ router.get(
     // todo:uncomment middleware and userId
     const { courseId, videoId } = req.params;
     // const userId = req.user._id.toString();
-    const userId = req?.user?._id?.toString() || "69784bb7843705c35aa436e9"
+    const userId = req?.user?._id?.toString() || "69784bb7843705c35aa436e9";
 
     const course = await courseCollection.findOne({ courseId });
     if (!course) return res.status(404).json({ error: "Course not found" });
@@ -512,9 +459,8 @@ router.get(
     res.json({
       url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/master.m3u8?token=${token}`,
     });
-  }
+  },
 );
-
 
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
@@ -571,14 +517,16 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       let playlist = fs.readFileSync(filePath, "utf8");
 
       if (!isPublic) {
-        playlist = playlist.replace(
-          /(seg_[^"\n]+\.ts)/g,
-          `$1?token=${token}`
-        );
+        // rewrite ts segments
+        playlist = playlist.replace(/(seg_[^"\n]+\.ts)/g, `$1?token=${token}`);
 
+        // rewrite variant playlists (0/index.m3u8 etc)
+        playlist = playlist.replace(/(\d+\/index\.m3u8)/g, `$1?token=${token}`);
+
+        // rewrite key URL
         playlist = playlist.replace(
-          /(key\/[^\n"]+)/g,
-          `$1?token=${token}`
+          /(\/course\/key\/[^\n"]+)/g,
+          `$1?token=${token}`,
         );
       }
 
@@ -591,13 +539,11 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     res.setHeader("Content-Type", "video/mp2t");
     res.setHeader("Cache-Control", "no-store");
     fs.createReadStream(filePath).pipe(res);
-
   } catch (err) {
     console.error(err);
     res.status(500).end("Server error");
   }
 });
-
 
 router.get("/course/key/:videoId", async (req, res) => {
   try {
@@ -616,7 +562,7 @@ router.get("/course/key/:videoId", async (req, res) => {
     const keyPath = path.join(
       "/data/uploads/private/videos",
       videoId,
-      "key.key"
+      "key.key",
     );
 
     if (!fs.existsSync(keyPath)) {
@@ -632,7 +578,6 @@ router.get("/course/key/:videoId", async (req, res) => {
   }
 });
 
-
 router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
   await streamsCollection.updateOne(
     { userId: req.user._id },
@@ -642,8 +587,5 @@ router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
 
   res.json({ ok: true });
 });
-
-
-
 
 export default router;
