@@ -1,10 +1,18 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
+import { addJob, videoJobs } from "../queue/hlsQueue.js";
+
+
 import lowAdminMiddleware from "../middlewares/lowAdminMiddleware.js";
 import strictAdminMiddleware from "../middlewares/strictAdminMiddleware.js";
 import dbConnect from "../config/db.mjs";
 import { ObjectId } from "mongodb";
 import convertToDhakaTime from "../utils/convertToDhakaTime.mjs";
 import { uploadPrivateFile } from "../middlewares/uploadPrivateFile.middleware.js";
+
+
 const router = express.Router();
 const db = await dbConnect();
 const blogsCollection = db?.collection("blogs");
@@ -1459,33 +1467,87 @@ router.delete(
 );
 
 // video file upload for course
+// router.post(
+//   "/course/upload",
+//   strictAdminMiddleware,
+//   uploadPrivateFile.single("file"),
+//   async (req, res) => {
+//     let type;
+
+//     if (req.file.mimetype.startsWith("video/")) {
+//       type = "video";
+//     } else if (req.file.mimetype === "application/pdf") {
+//       type = "pdf";
+//     } else if (req.file.mimetype.startsWith("audio/")) {
+//       type = "audio";
+//     } else if (req.file.mimetype.startsWith("image/")) {
+//       type = "image";
+//     } else {
+//       type = "file";
+//     }
+
+//     return res.json({
+//       message: "File uploaded",
+//       filename: req?.file?.filename,
+//       originalName: req?.file?.originalname,
+//       mime: req?.file?.mimetype,
+//       size: req?.file?.size,
+//     });
+//   },
+// );
+
 router.post(
   "/course/upload",
   strictAdminMiddleware,
   uploadPrivateFile.single("file"),
   async (req, res) => {
-    let type;
+    if (!req.file) return res.status(400).json({ error: "No file" });
 
-    if (req.file.mimetype.startsWith("video/")) {
-      type = "video";
-    } else if (req.file.mimetype === "application/pdf") {
-      type = "pdf";
-    } else if (req.file.mimetype.startsWith("audio/")) {
-      type = "audio";
-    } else if (req.file.mimetype.startsWith("image/")) {
-      type = "image";
-    } else {
-      type = "file";
+    // non-video
+    if (!req.file.mimetype.startsWith("video/")) {
+      return res.json({
+        message: "File uploaded",
+        filename: req.file.filename,
+        mime: req.file.mimetype,
+      });
     }
 
-    return res.json({
-      message: "File uploaded",
-      filename: req?.file?.filename,
-      originalName: req?.file?.originalname,
-      mime: req?.file?.mimetype,
-      size: req?.file?.size,
+    const inputPath = req.file.path;
+    const videoId = path.basename(inputPath, path.extname(inputPath));
+    const baseDir = path.join("/data/uploads/private/videos", videoId);
+    fs.mkdirSync(baseDir, { recursive: true });
+
+    const keyPath = path.join(baseDir, "key.key");
+    const keyInfoPath = path.join(baseDir, "keyinfo.txt");
+    const playlistPath = path.join(baseDir, "index.m3u8");
+
+    fs.writeFileSync(keyPath, crypto.randomBytes(16));
+    fs.writeFileSync(keyInfoPath, `${keyPath}\n${keyPath}\n`);
+
+    const cmd = `
+ffmpeg -y -i "${inputPath}" \
+-c:v libx264 -preset veryfast -crf 23 -vf scale=1280:720 \
+-c:a aac \
+-hls_time 6 \
+-hls_playlist_type vod \
+-hls_key_info_file "${keyInfoPath}" \
+-hls_segment_filename "${baseDir}/seg_%03d.ts" \
+"${playlistPath}"
+`;
+
+    // init job state
+    videoJobs[videoId] = { status: "queued", percent: 0 };
+
+    addJob(videoId, cmd, async () => {
+      // delete mp4 after done
+      fs.promises.unlink(inputPath).catch(console.error);
     });
-  },
+
+    res.json({
+      message: "Video uploaded. Processing started.",
+      videoId,
+    });
+  }
 );
 
 export default router;

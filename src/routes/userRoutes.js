@@ -3,15 +3,9 @@ import dbConnect from "../config/db.mjs";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
 import { ObjectId } from "mongodb";
-import nodemailer from "nodemailer";
 import lowUserOnlyMiddleware from "../middlewares/lowUserOnlyMiddleware.js";
 import strictUserOnlyMiddleware from "../middlewares/strictUserOnlyMiddleware.mjs";
 import { uploadPublicFile } from "../middlewares/upload.middleware.js";
-
-import fs from "fs";
-import path from "path";
-import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
-
 const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
@@ -423,135 +417,8 @@ router.post(
   },
 );
 
-router.get(
-  "/course/file/:courseId/:filename",
-  // strictUserOnlyMiddleware,
-  async (req, res) => {
-    try {
-      const userId = req?.user?._id.toString();
-      const { courseId, filename } = req.params;
 
-      const courseInfo = await courseCollection.findOne({
-        courseId,
-        // students: req?.user?._id,
-      });
 
-      if (!courseInfo) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // const isEnrolled = await usersCollection.findOne(
-      //   {
-      //     _id: new ObjectId(userId),
-      //     enrolledCourses: courseInfo._id.toString(),
-      //   },
-      //   { projection: { _id: 1 } },
-      // );
-
-      // if (!isEnrolled) {
-      //   return res.status(403).json({ message: "Access denied" });
-      // }
-
-      // 2. Find file inside modules
-      let file = null;
-
-      for (const module of courseInfo.modules) {
-        for (const item of module.items) {
-          if (
-            item.url?.filename === filename &&
-            item.status === "private" &&
-            (item.type === "video" || item.type === "file")
-          ) {
-            file = item;
-            break;
-          }
-        }
-        if (file) break;
-      }
-
-      if (!file) {
-        return res.status(404).json({ error: "File not found" });
-      }
-
-      // const activeStream = await streamsCollection.findOne({
-      //   userId: req.user._id,
-      // });
-
-      // if (activeStream) {
-      //   const diff = Date.now() - new Date(activeStream.lastPing).getTime();
-
-      //   if (diff < 60000 && activeStream.filename !== filename) {
-      //     return res.status(403).json({
-      //       error: "Another active stream detected",
-      //     });
-      //   }
-      // }
-
-      // register / refresh stream AFTER check
-      // await streamsCollection.updateOne(
-      //   { userId: req.user._id },
-      //   {
-      //     $set: {
-      //       userId: req.user._id,
-      //       courseId,
-      //       filename,
-      //       startedAt: new Date(),
-      //       lastPing: new Date(),
-      //     },
-      //   },
-      //   { upsert: true },
-      // );
-
-      // 3. Decide folder by mime/type
-      let folder = "others";
-      if (file.type === "video") folder = "videos";
-      else if (file.url.mime?.startsWith("image")) folder = "images";
-      else if (file.url.mime === "application/pdf") folder = "pdfs";
-      else if (file.url.mime?.startsWith("audio")) folder = "audio";
-      const filePath = path.join(
-        "/data/uploads/private",
-        folder,
-        file.url.filename,
-      );
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: "File missing on server" });
-      }
-
-      const stat = fs.statSync(filePath);
-      const fileSize = stat.size;
-      const range = req.headers.range;
-
-      res.setHeader("Content-Type", file.url.mime);
-      res.setHeader("Content-Disposition", "inline");
-      res.setHeader("Cache-Control", "no-store");
-      res.setHeader("X-Content-Type-Options", "nosniff");
-      // 4. Video streaming
-      if (range && file.type === "video") {
-        const parts = range.replace(/bytes=/, "").split("-");
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-        const chunkSize = end - start + 1;
-        const stream = fs.createReadStream(filePath, { start, end });
-
-        res.writeHead(206, {
-          "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-          "Accept-Ranges": "bytes",
-          "Content-Length": chunkSize,
-        });
-
-        stream.pipe(res);
-      } else {
-        res.setHeader("Content-Length", fileSize);
-        fs.createReadStream(filePath).pipe(res);
-      }
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Server error" });
-    }
-  },
-);
 
 router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
   await streamsCollection.updateOne(
@@ -562,5 +429,16 @@ router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
 
   res.json({ ok: true });
 });
+
+router.get("/course/video-status/:videoId", (req, res) => {
+  const job = videoJobs[req.params.videoId];
+
+  if (!job) {
+    return res.status(404).json({ error: "Unknown video" });
+  }
+
+  res.json(job);
+});
+
 
 export default router;
