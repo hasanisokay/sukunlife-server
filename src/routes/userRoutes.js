@@ -492,7 +492,7 @@ router.get(
     const token = createHLSToken(userId, courseId, videoId);
 
     res.json({
-      url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/index.m3u8?token=${token}`,
+      url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/master.m3u8?token=${token}`,
     });
   }
 );
@@ -503,7 +503,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     const { courseId, videoId } = req.params;
     const file = req.params[0]; // 0/index.m3u8 or 1/seg_001.ts
     const { token } = req.query;
-console.log('token missing')
+
     if (!token) return res.status(403).end("Missing token");
 
     const decoded = Buffer.from(token, "base64url").toString();
