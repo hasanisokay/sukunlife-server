@@ -425,7 +425,7 @@ router.post(
 
 router.get(
   "/course/file/:courseId/:filename",
-  strictUserOnlyMiddleware,
+  // strictUserOnlyMiddleware,
   async (req, res) => {
     try {
       const userId = req?.user?._id.toString();
@@ -433,24 +433,24 @@ router.get(
 
       const courseInfo = await courseCollection.findOne({
         courseId,
-        students: req?.user?._id,
+        // students: req?.user?._id,
       });
 
       if (!courseInfo) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const isEnrolled = await usersCollection.findOne(
-        {
-          _id: new ObjectId(userId),
-          enrolledCourses: courseInfo._id.toString(),
-        },
-        { projection: { _id: 1 } },
-      );
+      // const isEnrolled = await usersCollection.findOne(
+      //   {
+      //     _id: new ObjectId(userId),
+      //     enrolledCourses: courseInfo._id.toString(),
+      //   },
+      //   { projection: { _id: 1 } },
+      // );
 
-      if (!isEnrolled) {
-        return res.status(403).json({ message: "Access denied" });
-      }
+      // if (!isEnrolled) {
+      //   return res.status(403).json({ message: "Access denied" });
+      // }
 
       // 2. Find file inside modules
       let file = null;
@@ -473,34 +473,34 @@ router.get(
         return res.status(404).json({ error: "File not found" });
       }
 
-      const activeStream = await streamsCollection.findOne({
-        userId: req.user._id,
-      });
+      // const activeStream = await streamsCollection.findOne({
+      //   userId: req.user._id,
+      // });
 
-      if (activeStream) {
-        const diff = Date.now() - new Date(activeStream.lastPing).getTime();
+      // if (activeStream) {
+      //   const diff = Date.now() - new Date(activeStream.lastPing).getTime();
 
-        if (diff < 60000 && activeStream.filename !== filename) {
-          return res.status(403).json({
-            error: "Another active stream detected",
-          });
-        }
-      }
+      //   if (diff < 60000 && activeStream.filename !== filename) {
+      //     return res.status(403).json({
+      //       error: "Another active stream detected",
+      //     });
+      //   }
+      // }
 
       // register / refresh stream AFTER check
-      await streamsCollection.updateOne(
-        { userId: req.user._id },
-        {
-          $set: {
-            userId: req.user._id,
-            courseId,
-            filename,
-            startedAt: new Date(),
-            lastPing: new Date(),
-          },
-        },
-        { upsert: true },
-      );
+      // await streamsCollection.updateOne(
+      //   { userId: req.user._id },
+      //   {
+      //     $set: {
+      //       userId: req.user._id,
+      //       courseId,
+      //       filename,
+      //       startedAt: new Date(),
+      //       lastPing: new Date(),
+      //     },
+      //   },
+      //   { upsert: true },
+      // );
 
       // 3. Decide folder by mime/type
       let folder = "others";
