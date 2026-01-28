@@ -9,6 +9,8 @@ import sendOrderEmailToAdmin from "../utils/sendOrderEmailToAdmin.mjs";
 import sendOrderEmailToUser from "../utils/sendOrderEmailToUser.mjs";
 import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
 import sendUserBookingConfirmationEmail from "../utils/sendUserBookingConfirmationEmail.mjs";
+import fs from "fs";
+import path from "path";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -1430,5 +1432,48 @@ router.post("/initiate-payment", async (req, res) => {
     res.status(500).json({ message: "Payment initiation failed" });
   }
 });
+
+// courses public video routes
+
+
+router.get(
+  "/course/public/stream/:videoId/:file",
+  async (req, res) => {
+    try {
+      const { videoId, file } = req.params;
+      if (file.includes("..")) {
+        return res.status(400).json({ error: "Invalid file" });
+      }
+
+      const baseDir = path.join(
+        "/data/uploads/private/videos",
+        videoId
+      );
+
+      const filePath = path.join(baseDir, file);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: "Not found" });
+      }
+
+      // set correct content type
+      if (file.endsWith(".m3u8")) {
+        res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+      } else if (file.endsWith(".ts")) {
+        res.setHeader("Content-Type", "video/mp2t");
+      } else {
+        return res.status(403).json({ error: "Forbidden file type" });
+      }
+
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+
+      fs.createReadStream(filePath).pipe(res);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Stream error" });
+    }
+  }
+);
 
 export default router;

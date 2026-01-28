@@ -1,4 +1,8 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
+
+
 import dbConnect from "../config/db.mjs";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
@@ -6,6 +10,7 @@ import { ObjectId } from "mongodb";
 import lowUserOnlyMiddleware from "../middlewares/lowUserOnlyMiddleware.js";
 import strictUserOnlyMiddleware from "../middlewares/strictUserOnlyMiddleware.mjs";
 import { uploadPublicFile } from "../middlewares/upload.middleware.js";
+import {createHLSToken, verifyHLSToken} from "../utils/hlsToken.js"
 const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
@@ -418,6 +423,167 @@ router.post(
 );
 
 
+
+// router.get("/course/stream/:courseId/:videoId/:file", async (req, res) => {
+//   try {
+//     const { courseId, videoId, file } = req.params;
+//     const { token } = req.query;
+
+//     if (!token) return res.status(403).end("Missing token");
+
+//     // extract userId from token itself
+//     const decoded = Buffer.from(token, "base64url").toString();
+//     const userId = decoded.split("|")[0];
+
+//     if (!verifyHLSToken(token, userId, courseId, videoId)) {
+//       return res.status(403).end("Invalid token");
+//     }
+
+//     const basePath = path.join("/data/uploads/private/videos", videoId);
+//     const filePath = path.join(basePath, file);
+
+//     if (!filePath.startsWith(basePath)) {
+//       return res.status(403).end("Invalid path");
+//     }
+
+//     if (!fs.existsSync(filePath)) {
+//       return res.status(404).end("Not found");
+//     }
+
+//     // M3U8 must inject token into segment URLs
+//     if (file.endsWith(".m3u8")) {
+//       let playlist = fs.readFileSync(filePath, "utf8");
+
+//       playlist = playlist.replace(
+//         /(.*\.ts)/g,
+//         `$1?token=${token}`
+//       );
+
+//       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+//       return res.send(playlist);
+//     }
+
+//     // TS segment
+//     res.setHeader("Content-Type", "video/mp2t");
+//     fs.createReadStream(filePath).pipe(res);
+
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).end("Server error");
+//   }
+// });
+
+
+router.get(
+  "/course/stream-url/:courseId/:videoId",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    const { courseId, videoId } = req.params;
+    const userId = req.user._id.toString();
+
+    const course = await courseCollection.findOne({
+      courseId,
+      students: req.user._id,
+    });
+
+    if (!course) return res.status(403).json({ error: "Access denied" });
+
+    const token = createHLSToken(userId, courseId, videoId);
+
+    res.json({
+      url: `${process.env.API_URL}/api/user/course/stream/${courseId}/${videoId}/index.m3u8?token=${token}`,
+    });
+  }
+);
+
+
+router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
+  try {
+    const { courseId, videoId } = req.params;
+    const file = req.params[0]; // 0/index.m3u8 or 1/seg_001.ts
+    const { token } = req.query;
+
+    if (!token) return res.status(403).end("Missing token");
+
+    const decoded = Buffer.from(token, "base64url").toString();
+    const userId = decoded.split("|")[0];
+
+    if (!verifyHLSToke(token, userId, courseId, videoId)) {
+      return res.status(403).end("Invalid token");
+    }
+
+    const basePath = path.join("/data/uploads/private/videos", videoId);
+    const filePath = path.join(basePath, file);
+
+    if (!filePath.startsWith(basePath)) {
+      return res.status(403).end("Invalid path");
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).end("Not found");
+    }
+
+    // M3U8 → inject token
+    if (file.endsWith(".m3u8")) {
+      let playlist = fs.readFileSync(filePath, "utf8");
+
+      playlist = playlist.replace(
+        /(seg_[^"\n]+\.ts)/g,
+        `$1?token=${token}`
+      );
+
+      playlist = playlist.replace(
+        /(key\/[^\n"]+)/g,
+        `$1?token=${token}`
+      );
+
+      res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+      res.setHeader("Cache-Control", "no-store");
+      return res.send(playlist);
+    }
+
+    // TS segment
+    res.setHeader("Content-Type", "video/mp2t");
+    res.setHeader("Cache-Control", "no-store");
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).end("Server error");
+  }
+});
+
+router.get("/course/key/:videoId", async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const { token } = req.query;
+
+    if (!token) return res.status(403).end("Missing token");
+
+    const decoded = Buffer.from(token, "base64url").toString();
+    const [userId, courseId, vid] = decoded.split("|");
+
+    if (!verifyHLSToken(token, userId, courseId, videoId)) {
+      return res.status(403).end("Invalid token");
+    }
+
+    const keyPath = path.join(
+      "/data/uploads/private/videos",
+      videoId,
+      "key.key"
+    );
+
+    if (!fs.existsSync(keyPath)) {
+      return res.status(404).end("Key not found");
+    }
+
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Cache-Control", "no-store");
+    fs.createReadStream(keyPath).pipe(res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).end("Server error");
+  }
+});
 
 
 router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
