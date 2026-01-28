@@ -111,64 +111,64 @@ router.post("/login", async (req, res) => {
 
 // logout
 router.post("/logout", async (req, res) => {
+  const isProduction = process.env.NODE_ENV === "production";
+
   try {
-    const cookies = cookie.parse(req.headers?.cookie || "");
-    const rfrToken = cookies?.rfr_token;
-    const refreshToken = rfrToken || req.body.refreshToken;
-    if (!refreshToken) {
-      return res
-        .status(401)
-        .json({ message: "Refresh token missing", status: 401 });
-    }
-    let decoded;
+    // Always clear cookies first (logout should be idempotent)
+    res.clearCookie("acs_token", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      domain: isProduction ? ".sukunlife.com" : "localhost",
+      path: "/",
+    });
+
+    res.clearCookie("rfr_token", {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      domain: isProduction ? ".sukunlife.com" : "localhost",
+      path: "/",
+    });
+
+    // Try to read refresh token (optional)
+    let refreshToken;
     try {
-      decoded = jwt.verify(refreshToken, REFRESH_SECRET_KEY);
-    } catch (error) {
-      return res
-        .status(403)
-        .json({ message: "Invalid or expired refresh token", status: 403 });
-    }
-    let sessionId = decoded?.sessionId;
-
-    if (!sessionId) {
-      return res.status(400).json({ message: "No session found", status: 400 });
+      const cookies = cookie.parse(req.headers?.cookie || "");
+      refreshToken = cookies?.rfr_token || req.body?.refreshToken;
+    } catch {
+      refreshToken = null;
     }
 
-    // Remove session from the database
-    await sessionsCollection.deleteOne({ sessionId });
+    // If refresh token exists, try to delete session
+    if (refreshToken) {
+      try {
+        const decoded = jwt.verify(refreshToken, REFRESH_SECRET_KEY);
+        if (decoded?.sessionId) {
+          await sessionsCollection.deleteOne({
+            sessionId: decoded.sessionId,
+          });
+        }
+      } catch {
+        // Ignore token errors on logout
+      }
+    }
 
-    // Clear the cookies by setting an expired date
-    res.clearCookie(ACCESS_COOKIE_NAME, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "none",
+    return res.status(200).json({
+      message: "Logout successful",
+      status: 200,
     });
-
-    res.clearCookie(REFRESH_COOKIE_NAME, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "none",
-    });
-
-    return res.status(200).json({ message: "Logout successful", status: 200 });
   } catch (error) {
     console.error(error);
-    res.clearCookie(ACCESS_COOKIE_NAME, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "none",
-    });
 
-    res.clearCookie(REFRESH_COOKIE_NAME, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "none",
+    // Even on error, cookies are already cleared
+    return res.status(200).json({
+      message: "Logout successful",
+      status: 200,
     });
-    return res
-      .status(500)
-      .json({ message: "Server error", error, status: 500 });
   }
 });
+
 
 // Signup
 router.post("/signup", async (req, res) => {
