@@ -1479,57 +1479,165 @@ router.delete(
 //   },
 // );
 
-// In your video processing route
 router.get("/course/video-status/:videoId", async (req, res) => {
   const { videoId } = req.params;
   const job = videoJobs[videoId];
   
   if (!job) {
-    return res.status(404).json({ error: "Job not found" });
-  }
-  
-  // Calculate processing time
-  const processingTime = job.startTime ? Date.now() - job.startTime : 0;
-  
-  // For queued jobs, include queue position
-  if (job.status === "queued") {
-    const queuePosition = Object.keys(videoJobs)
-      .filter(id => videoJobs[id].status === "queued")
-      .indexOf(videoId) + 1;
-    
-    return res.json({
-      status: "queued",
-      queuePosition,
-      message: "Waiting for available processing resources"
+    return res.status(404).json({ 
+      status: "not_found",
+      error: "Video processing job not found",
+      message: "The video processing job may have been completed or cleared"
     });
   }
   
-  // For processing jobs, estimate ETA if possible
-  let eta = null;
-  if (job.status === "processing" && job.percent > 0) {
-    const elapsed = processingTime / 1000; // seconds
-    const estimatedTotal = elapsed / (job.percent / 100);
-    const remaining = estimatedTotal - elapsed;
+  const now = Date.now();
+  
+  // For queued jobs
+  if (job.status === "queued") {
+    const queuedJobs = Object.keys(videoJobs)
+      .filter(id => videoJobs[id].status === "queued")
+      .sort((a, b) => (videoJobs[a].queueTime || 0) - (videoJobs[b].queueTime || 0));
     
-    if (remaining < 60) {
-      eta = `${Math.round(remaining)}s`;
-    } else if (remaining < 3600) {
-      eta = `${Math.round(remaining / 60)}m`;
-    } else {
-      eta = `${Math.round(remaining / 3600)}h`;
-    }
+    const queuePosition = queuedJobs.indexOf(videoId) + 1;
+    const waitTime = job.queueTime ? Math.round((now - job.queueTime) / 1000) : 0;
+    
+    return res.json({
+      status: "queued",
+      percent: 0,
+      eta: "waiting...",
+      queuePosition,
+      totalInQueue: queuedJobs.length,
+      waitTime,
+      message: `Waiting in queue (position ${queuePosition} of ${queuedJobs.length})`,
+      queuedAt: job.queueTime
+    });
   }
   
+  // For processing jobs
+  if (job.status === "processing") {
+    const processingTime = job.startTime ? (now - job.startTime) / 1000 : 0;
+    
+    // Calculate more accurate ETA
+    let eta = job.eta || "calculating...";
+    let etaSeconds = null;
+    
+    if (job.percent > 0 && job.percent < 100 && job.startTime) {
+      const elapsedSeconds = processingTime;
+      const progressFraction = job.percent / 100;
+      
+      if (progressFraction > 0 && elapsedSeconds > 0) {
+        // Method 1: Based on current speed
+        if (job.speed && job.duration) {
+          const remainingTime = (job.duration - (job.currentTime || 0)) / job.speed;
+          etaSeconds = Math.max(0, Math.round(remainingTime));
+          eta = formatTime(etaSeconds);
+        }
+        // Method 2: Based on percentage progression
+        else {
+          const estimatedTotal = elapsedSeconds / progressFraction;
+          const remaining = Math.max(0, estimatedTotal - elapsedSeconds);
+          etaSeconds = Math.round(remaining);
+          eta = formatTime(etaSeconds);
+        }
+      }
+    }
+    
+    // Add processing speed
+    let speed = null;
+    if (job.speed) {
+      speed = `${job.speed.toFixed(2)}x`;
+    } else if (job.ffmpegSpeed) {
+      speed = `${job.ffmpegSpeed.toFixed(2)}x`;
+    }
+    
+    return res.json({
+      status: "processing",
+      percent: job.percent,
+      eta: eta,
+      etaSeconds: etaSeconds,
+      speed: speed,
+      duration: job.duration || 0,
+      processingTime: Math.round(processingTime),
+      currentStep: job.currentStep || "Transcoding video",
+      startTime: job.startTime,
+      currentTime: job.currentTime || 0,
+      totalDuration: job.duration || 0
+    });
+  }
+  
+  // For completed jobs
+  if (job.status === "completed" || job.status === "ready") {
+    const processingTime = job.totalProcessingTime || 
+                          (job.completedAt && job.startTime ? (job.completedAt - job.startTime) / 1000 : 0);
+    
+    return res.json({
+      status: "completed",
+      percent: 100,
+      eta: "0s",
+      duration: job.duration || 0,
+      processingTime: Math.round(processingTime),
+      totalTime: Math.round(processingTime),
+      resolutions: job.resolutions || [],
+      message: "Video processing completed successfully",
+      completedAt: job.completedAt
+    });
+  }
+  
+  // For failed jobs
+  if (job.status === "failed") {
+    const processingTime = job.startTime ? (now - job.startTime) / 1000 : 0;
+    
+    return res.json({
+      status: "failed",
+      percent: job.percent || 0,
+      error: job.error || "Video processing failed",
+      processingTime: Math.round(processingTime),
+      failedAt: job.failedAt
+    });
+  }
+  
+  // For cancelled jobs
+  if (job.status === "cancelled") {
+    return res.json({
+      status: "cancelled",
+      percent: job.percent || 0,
+      message: "Video processing was cancelled",
+      cancelledAt: job.cancelledAt
+    });
+  }
+  
+  // Default response
   res.json({
-    status: job.status,
+    status: job.status || "unknown",
     percent: job.percent || 0,
-    eta,
-    duration: job.estimatedDuration || job.duration || 0,
-    processingTime: Math.round(processingTime / 1000), // seconds
-    resolutions: job.resolutions || [],
-    ...(job.error && { error: job.error })
+    message: job.message || "Processing status"
   });
 });
+
+// Helper function (same as in addJob.js)
+function formatTime(sec) {
+  if (!sec || sec < 0 || !isFinite(sec)) return "calculating...";
+  
+  if (sec < 60) {
+    return `${Math.round(sec)}s`;
+  } else if (sec < 3600) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  } else {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    if (m > 0 && s > 0) {
+      return `${h}h ${m}m ${s}s`;
+    } else if (m > 0) {
+      return `${h}h ${m}m`;
+    } else {
+      return `${h}h`;
+    }
+  }
+}
 router.post(
   "/course/upload",
   strictAdminMiddleware,
