@@ -557,33 +557,7 @@ router.get("/course/:id", async (req, res) => {
             else: 0,
           },
         },
-        modules: {
-          $map: {
-            input: "$modules",
-            as: "module",
-            in: {
-              title: "$$module.title",
-              items: {
-                $map: {
-                  input: "$$module.items",
-                  as: "item",
-                  in: {
-                    $cond: {
-                      if: { $eq: ["$$item.status", "public"] },
-                      then: "$$item",
-                      else: {
-                        status: "$$item.status",
-                        type: "$$item.type",
-                        title: "$$item.title",
-                        description: "$$item.description",
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        modules: 1
       },
     });
 
