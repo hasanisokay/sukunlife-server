@@ -156,54 +156,300 @@ router.get(
   },
 );
 
-router.put("/update-progress", lowUserOnlyMiddleware, async (req, res) => {
-  try {
-    const body = req.body;
-    const userId = req.user._id;
-    const courseId = body.courseId;
-    body.date = new Date();
+router.put(
+  "/update-progress/:courseId",
+  lowUserOnlyMiddleware,
+  async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const { courseId } = req.params;
+      const {
+        action, // 'mark-complete', 'update-video-time', 'quiz-result'
+        itemId,
+        moduleId,
+        data, // additional data based on action
+      } = req.body;
 
-    // Parsing integer values for module and item
-    body.module = parseInt(body.module);
-    body.item = parseInt(body.item);
+      if (!userId) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
 
-    // Create the progress object for lastSync
-    const progress = {
-      module: body.module,
-      item: body.item,
-      percentage: body.percentage || 0, // If no percentage is passed, set it to 0
-      date: body.date,
-    };
+      // Validate course exists
+      const course = await courseCollection.findOne({ courseId });
 
-    // Update query to update the lastSync for the specific course
-    const result = await usersCollection.updateOne(
-      {
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      // Get user's current progress
+      const user = await usersCollection.findOne({
         _id: new ObjectId(userId),
-        "enrolledCourses.courseId": new ObjectId(courseId),
-      },
-      {
-        $set: {
-          "enrolledCourses.$.lastSync": progress, // Update lastSync for the matched course
+      });
+
+      const progressPath = `courseProgress.${courseId}`;
+      let currentProgress = user.courseProgress?.[courseId] || {
+        courseId: courseId,
+        completedItems: [],
+        completedModules: [],
+        currentItem: null,
+        overallProgress: 0,
+        lastUpdated: new Date(),
+        startedOn: new Date(),
+        quizScores: {},
+        videoProgress: {},
+      };
+
+      switch (action) {
+        case "mark-complete":
+          if (!itemId) {
+            return res.status(400).json({ error: "itemId is required" });
+          }
+
+          // Add item to completed items if not already
+          if (!currentProgress.completedItems.includes(itemId)) {
+            currentProgress.completedItems.push(itemId);
+          }
+
+          // Check if all items in module are completed
+          const module = course.modules.find((m) => m.moduleId === moduleId);
+          if (module) {
+            const moduleItems = module.items.map((item) => item.itemId);
+            const allCompleted = moduleItems.every((itemId) =>
+              currentProgress.completedItems.includes(itemId),
+            );
+
+            if (
+              allCompleted &&
+              !currentProgress.completedModules.includes(moduleId)
+            ) {
+              currentProgress.completedModules.push(moduleId);
+            }
+          }
+
+          break;
+
+        case "update-video-time":
+          if (!itemId || !data) {
+            return res
+              .status(400)
+              .json({ error: "itemId and data are required" });
+          }
+
+          currentProgress.videoProgress[itemId] = {
+            ...currentProgress.videoProgress[itemId],
+            currentTime: data.currentTime,
+            duration: data.duration,
+            percentage: data.percentage,
+            lastWatched: new Date(),
+          };
+          break;
+
+        case "quiz-result":
+          if (!itemId || !data) {
+            return res
+              .status(400)
+              .json({ error: "itemId and data are required" });
+          }
+
+          currentProgress.quizScores[itemId] = {
+            score: data.score,
+            maxScore: data.maxScore,
+            passed: data.passed,
+            attempts: (currentProgress.quizScores[itemId]?.attempts || 0) + 1,
+            lastAttempt: new Date(),
+          };
+
+          // Mark as completed if passed
+          if (data.passed && !currentProgress.completedItems.includes(itemId)) {
+            currentProgress.completedItems.push(itemId);
+          }
+          break;
+
+        case "set-current-item":
+          if (!itemId) {
+            return res.status(400).json({ error: "itemId is required" });
+          }
+          currentProgress.currentItem = itemId;
+          break;
+
+        default:
+          return res.status(400).json({ error: "Invalid action" });
+      }
+
+      // Calculate overall progress percentage
+      const totalItems = course.modules.reduce(
+        (total, module) => total + module.items.length,
+        0,
+      );
+      currentProgress.overallProgress =
+        totalItems > 0
+          ? Math.round(
+              (currentProgress.completedItems.length / totalItems) * 100,
+            )
+          : 0;
+
+      // Check if course is completed
+      if (
+        currentProgress.overallProgress === 100 &&
+        !currentProgress.completedOn
+      ) {
+        currentProgress.completedOn = new Date();
+      }
+
+      currentProgress.lastUpdated = new Date();
+
+      // Update user document
+      const updateResult = await usersCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        {
+          $set: {
+            [progressPath]: currentProgress,
+          },
         },
-      },
+        { upsert: true },
+      );
+
+      res.json({
+        success: true,
+        message: "Progress updated successfully",
+        progress: currentProgress,
+        updateResult,
+      });
+    } catch (error) {
+      console.error("Error updating progress:", error);
+      res.status(500).json({
+        error: "Failed to update progress",
+        details: error.message,
+      });
+    }
+  },
+);
+router.get(
+  "/course-progress/:courseId",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const { courseId } = req.params;
+
+      if (!userId) {
+        return res.status(401).json({ error: "User not authenticated" });
+      }
+
+      // Get course details
+      const course = await courseCollection.findOne({ courseId });
+
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      // Get user progress
+      const user = await usersCollection.findOne(
+        { _id: new ObjectId(userId) },
+        { projection: { [`courseProgress.${courseId}`]: 1 } },
+      );
+
+      const userProgress = user?.courseProgress?.[courseId] || {
+        courseId: courseId,
+        completedItems: [],
+        completedModules: [],
+        currentItem: null,
+        overallProgress: 0,
+        startedOn: null,
+        lastUpdated: null,
+        completedOn: null,
+        quizScores: {},
+        videoProgress: {},
+      };
+
+      // Enrich progress data with course content
+      const enrichedProgress = {
+        ...userProgress,
+        course: {
+          title: course.title,
+          totalModules: course.modules.length,
+          totalItems: course.modules.reduce(
+            (total, module) => total + module.items.length,
+            0,
+          ),
+          modules: course.modules.map((module) => ({
+            moduleId: module.moduleId,
+            title: module.title,
+            order: module.order,
+            isCompleted: userProgress.completedModules.includes(
+              module.moduleId,
+            ),
+            items: module.items.map((item) => ({
+              itemId: item.itemId,
+              title: item.title,
+              type: item.type,
+              order: item.order,
+              isCompleted: userProgress.completedItems.includes(item.itemId),
+              videoProgress: userProgress.videoProgress[item.itemId] || null,
+              quizScore: userProgress.quizScores[item.itemId] || null,
+            })),
+          })),
+        },
+      };
+
+      res.json({
+        success: true,
+        progress: enrichedProgress,
+      });
+    } catch (error) {
+      console.error("Error fetching progress:", error);
+      res.status(500).json({
+        error: "Failed to fetch progress",
+        details: error.message,
+      });
+    }
+  },
+);
+router.get("/all-progress", strictUserOnlyMiddleware, async (req, res) => {
+  try {
+    const userId = req.user._id;
+
+    const user = await usersCollection.findOne(
+      { _id: new ObjectId(userId) },
+      { projection: { courseProgress: 1 } },
     );
 
-    // Check if any document was updated
-    if (result.modifiedCount === 0) {
-      return res.status(400).json({ message: "No changes made.", status: 400 });
-    }
+    const progress = user?.courseProgress || {};
 
-    // Send success response
-    res
-      .status(200)
-      .json({ status: 200, message: "Progress updated successfully." });
+    res.json({
+      success: true,
+      progress: progress,
+    });
   } catch (error) {
-    // Handle server error
-    res
-      .status(500)
-      .json({ status: 500, message: "Internal server error.", error });
+    console.error("Error fetching all progress:", error);
+    res.status(500).json({ error: "Failed to fetch progress" });
   }
 });
+router.delete(
+  "/reset-progress/:courseId",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    try {
+      const userId = req.user._id;
+      const { courseId } = req.params;
+
+      const result = await usersCollection.updateOne(
+        { _id: new ObjectId(userId) },
+        { $unset: { [`courseProgress.${courseId}`]: "" } },
+      );
+
+      res.json({
+        success: true,
+        message: "Progress reset successfully",
+        result,
+      });
+    } catch (error) {
+      console.error("Error resetting progress:", error);
+      res.status(500).json({ error: "Failed to reset progress" });
+    }
+  },
+);
+
 router.get("/user-orders", strictUserOnlyMiddleware, async (req, res) => {
   try {
     const query = req.query;
@@ -429,7 +675,7 @@ router.get(
     const { courseId, videoId } = req.params;
     // const userId = req.user._id.toString();
     const userId = req?.user?._id?.toString() || "69784bb7843705c35aa436e9";
-// testing currently. no auth needed
+    // testing currently. no auth needed
     const course = await courseCollection.findOne({ courseId });
     if (!course) return res.status(404).json({ error: "Course not found" });
 
@@ -477,7 +723,7 @@ router.get(
             courseId: 1,
             modules: 1,
           },
-        }
+        },
       );
 
       if (!course) {
@@ -489,7 +735,7 @@ router.get(
 
       // Try to find the requested module
       const matchedModule = course.modules?.find(
-        (m) => m.moduleId === moduleId
+        (m) => m.moduleId === moduleId,
       );
 
       return res.status(200).json({
@@ -507,9 +753,8 @@ router.get(
         error: error.message,
       });
     }
-  }
+  },
 );
-
 
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
@@ -589,14 +834,17 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       if (!isPublic && token) {
         // Rewrite .ts segment URLs
         playlist = playlist.replace(/(seg_\d+\.ts)/g, `$1?token=${token}`);
-        
+
         // Rewrite variant playlist URLs (720p/index.m3u8, 1080p/index.m3u8)
-        playlist = playlist.replace(/(720p\/index\.m3u8|1080p\/index\.m3u8)/g, `$1?token=${token}`);
-        
+        playlist = playlist.replace(
+          /(720p\/index\.m3u8|1080p\/index\.m3u8)/g,
+          `$1?token=${token}`,
+        );
+
         // Rewrite encryption key URI if present
         playlist = playlist.replace(
           /(URI=")([^"]+)(")/g,
-          (match, p1, uri, p3) => `${p1}${uri}?token=${token}${p3}`
+          (match, p1, uri, p3) => `${p1}${uri}?token=${token}${p3}`,
         );
       }
 
