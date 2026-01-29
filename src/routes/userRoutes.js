@@ -462,88 +462,37 @@ router.get(
   },
 );
 
-// router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
-//   try {
-//     const { courseId, videoId } = req.params;
-//     const file = req.params[0]; // master.m3u8, 0/index.m3u8, 0/seg_001.ts
-//     const { token } = req.query;
+router.get("/modules/:courseId", strictUserOnlyMiddleware, async (req, res) => {
+  try {
+    const courseId = req.params.id;
+    const matchStage = { courseId };
 
-//     const course = await courseCollection.findOne({ courseId });
-//     if (!course) return res.status(404).end("Course not found");
+    const course = await courseCollection.findOne(matchStage, {
+      projection: {
+        title: 1,
+        courseId: 1,
+        modules: 1
+      },
+    });
 
-//     // 🔍 find video item in course
-//     let videoItem = null;
+    if (!course) {
+      return res.status(404).json({ message: "No course found", status: 404 });
+    }
 
-//     for (const module of course.modules) {
-//       for (const item of module.items) {
-//         if (item.type === "video" && item.url.filename === videoId) {
-//           videoItem = item;
-//           break;
-//         }
-//       }
-//       if (videoItem) break;
-//     }
+    return res.status(200).json({
+      message: "Course Found",
+      status: 200,
+      course,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error",
+      status: 500,
+      error: error.message,
+    });
+  }
+});
 
-//     if (!videoItem) return res.status(404).end("Video not found");
-
-//     const isPublic = videoItem.status === "public";
-
-//     // 🔐 private video → verify token
-//     if (!isPublic) {
-//       if (!token) return res.status(403).end("Missing token");
-
-//       const decoded = Buffer.from(token, "base64url").toString();
-//       const userId = decoded.split("|")[0];
-
-//       if (!verifyHLSToken(token, userId, courseId, videoId)) {
-//         return res.status(403).end("Invalid token");
-//       }
-//     }
-
-//     const basePath = path.join("/data/uploads/private/videos", videoId);
-//     const filePath = path.join(basePath, file);
-
-//     // path traversal protection
-//     if (!filePath.startsWith(basePath)) {
-//       return res.status(403).end("Invalid path");
-//     }
-
-//     if (!fs.existsSync(filePath)) {
-//       return res.status(404).end("Not found");
-//     }
-
-//     // 📜 playlist → inject token for private
-//     if (file.endsWith(".m3u8")) {
-//       let playlist = fs.readFileSync(filePath, "utf8");
-
-//       if (!isPublic) {
-//         // rewrite ts segments
-//         playlist = playlist.replace(/(seg_[^"\n]+\.ts)/g, `$1?token=${token}`);
-
-//         // rewrite variant playlists (0/index.m3u8 etc)
-//         playlist = playlist.replace(/(\d+\/index\.m3u8)/g, `$1?token=${token}`);
-
-//         // rewrite key URL
-//         playlist = playlist.replace(
-//           /(\/course\/key\/[^\n"]+)/g,
-//           `$1?token=${token}`,
-//         );
-//       }
-
-//       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-//       res.setHeader("Cache-Control", "no-store");
-//       return res.send(playlist);
-//     }
-
-//     // TS segment
-//     res.setHeader("Content-Type", "video/mp2t");
-//     res.setHeader("Cache-Control", "no-store");
-//     fs.createReadStream(filePath).pipe(res);
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).end("Server error");
-//   }
-// });
 
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
@@ -552,7 +501,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     const { token } = req.query;
 
     console.log(`Streaming request: ${file}`);
-    
+
     const course = await courseCollection.findOne({ courseId });
     if (!course) {
       console.error("Course not found:", courseId);

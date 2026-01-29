@@ -579,6 +579,8 @@ router.get("/course/:id", async (req, res) => {
   }
 });
 
+
+
 router.get("/courses", async (req, res) => {
   try {
     const query = req.query;
