@@ -565,16 +565,16 @@ router.put("/course/:id", strictAdminMiddleware, async (req, res) => {
     const updateData = req.body;
 
     const { _id, ...dataWithoutId } = updateData;
-    dataWithoutId.updatedOn = convertToDhakaTime(dataWithoutId.updatedOn);
-    dataWithoutId.addedOn = convertToDhakaTime(dataWithoutId.addedOn);
-    dataWithoutId.price = parseFloat(dataWithoutId.price);
+    dataWithoutId.updatedOn = convertToDhakaTime(dataWithoutId?.updatedOn || new Date());
+    dataWithoutId.addedOn = convertToDhakaTime(dataWithoutId.addedOn || new Date());
+    dataWithoutId.price = parseFloat(dataWithoutId.price || new Date());
 
     const result = await courseCollection.updateOne(
       { _id: new ObjectId(courseId) },
       { $set: dataWithoutId },
     );
 
-    if (result?.matchedCount > 0) {
+    if (result?.modifiedCount > 0) {
       return res
         .status(200)
         .json({ message: "Course updated successfully.", status: 200, result });
