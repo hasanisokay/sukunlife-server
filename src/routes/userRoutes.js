@@ -462,36 +462,53 @@ router.get(
   },
 );
 
-router.get("/modules/:courseId", strictUserOnlyMiddleware, async (req, res) => {
-  try {
-    const courseId = req.params.id;
-    const matchStage = { courseId };
+router.get(
+  "/modules/:courseId/:moduleId",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    try {
+      const { courseId, moduleId } = req.params;
 
-    const course = await courseCollection.findOne(matchStage, {
-      projection: {
-        title: 1,
-        courseId: 1,
-        modules: 1
-      },
-    });
+      const course = await courseCollection.findOne(
+        { courseId },
+        {
+          projection: {
+            title: 1,
+            courseId: 1,
+            modules: 1,
+          },
+        }
+      );
 
-    if (!course) {
-      return res.status(404).json({ message: "No course found", status: 404 });
+      if (!course) {
+        return res.status(404).json({
+          message: "No course found",
+          status: 404,
+        });
+      }
+
+      // Try to find the requested module
+      const matchedModule = course.modules?.find(
+        (m) => m.moduleId === moduleId
+      );
+
+      return res.status(200).json({
+        message: "Course Found",
+        status: 200,
+        course: {
+          ...course,
+          modules: matchedModule ? [matchedModule] : course.modules,
+        },
+      });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Server error",
+        status: 500,
+        error: error.message,
+      });
     }
-
-    return res.status(200).json({
-      message: "Course Found",
-      status: 200,
-      course,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      message: "Server error",
-      status: 500,
-      error: error.message,
-    });
   }
-});
+);
 
 
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
