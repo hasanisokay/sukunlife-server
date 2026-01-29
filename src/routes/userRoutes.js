@@ -552,18 +552,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     const { token } = req.query;
 
     console.log(`Streaming request: ${file}`);
-
-    // CORS headers - MUST be set before any response
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Range");
-    res.setHeader("Access-Control-Expose-Headers", "Content-Length, Content-Range");
-
-    // Handle preflight
-    if (req.method === "OPTIONS") {
-      return res.status(200).end();
-    }
-
+    
     const course = await courseCollection.findOne({ courseId });
     if (!course) {
       console.error("Course not found:", courseId);
