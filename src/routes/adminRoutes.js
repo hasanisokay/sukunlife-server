@@ -1465,20 +1465,71 @@ router.delete(
   },
 );
 
-router.get(
-  "/course/video-status/:videoId",
-  // strictAdminMiddleware,
-  (req, res) => {
-    const job = videoJobs[req.params.videoId];
-    //todo: uncomment middleware
-    if (!job) {
-      return res.status(404).json({ error: "Unknown video" });
+// router.get(
+//   "/course/video-status/:videoId",
+//   // strictAdminMiddleware,
+//   (req, res) => {
+//     const job = videoJobs[req.params.videoId];
+//     //todo: uncomment middleware
+//     if (!job) {
+//       return res.status(404).json({ error: "Unknown video" });
+//     }
+
+//     res.json(job);
+//   },
+// );
+
+// In your video processing route
+router.get("/course/video-status/:videoId", async (req, res) => {
+  const { videoId } = req.params;
+  const job = videoJobs[videoId];
+  
+  if (!job) {
+    return res.status(404).json({ error: "Job not found" });
+  }
+  
+  // Calculate processing time
+  const processingTime = job.startTime ? Date.now() - job.startTime : 0;
+  
+  // For queued jobs, include queue position
+  if (job.status === "queued") {
+    const queuePosition = Object.keys(videoJobs)
+      .filter(id => videoJobs[id].status === "queued")
+      .indexOf(videoId) + 1;
+    
+    return res.json({
+      status: "queued",
+      queuePosition,
+      message: "Waiting for available processing resources"
+    });
+  }
+  
+  // For processing jobs, estimate ETA if possible
+  let eta = null;
+  if (job.status === "processing" && job.percent > 0) {
+    const elapsed = processingTime / 1000; // seconds
+    const estimatedTotal = elapsed / (job.percent / 100);
+    const remaining = estimatedTotal - elapsed;
+    
+    if (remaining < 60) {
+      eta = `${Math.round(remaining)}s`;
+    } else if (remaining < 3600) {
+      eta = `${Math.round(remaining / 60)}m`;
+    } else {
+      eta = `${Math.round(remaining / 3600)}h`;
     }
-
-    res.json(job);
-  },
-);
-
+  }
+  
+  res.json({
+    status: job.status,
+    percent: job.percent || 0,
+    eta,
+    duration: job.estimatedDuration || job.duration || 0,
+    processingTime: Math.round(processingTime / 1000), // seconds
+    resolutions: job.resolutions || [],
+    ...(job.error && { error: job.error })
+  });
+});
 router.post(
   "/course/upload",
   strictAdminMiddleware,
