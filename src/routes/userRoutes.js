@@ -548,12 +548,12 @@ router.get(
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
     const { courseId, videoId } = req.params;
-    const file = req.params[0];
+    const requestedFile = req.params[0];
     const { token } = req.query;
 
-    console.log(`Streaming request: ${file}`);
+    console.log(`📺 Streaming request - Course: ${courseId}, Video: ${videoId}, File: ${requestedFile}`);
 
-    // CORS headers - MUST be set before any response
+    // CORS headers
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Range");
@@ -564,12 +564,14 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       return res.status(200).end();
     }
 
+    // Validate course exists
     const course = await courseCollection.findOne({ courseId });
     if (!course) {
-      console.error("Course not found:", courseId);
-      return res.status(404).end("Course not found");
+      console.error("❌ Course not found:", courseId);
+      return res.status(404).send("Course not found");
     }
 
+    // Find video in course structure
     let videoItem = null;
     for (const module of course.modules) {
       for (const item of module.items) {
@@ -582,16 +584,17 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     }
 
     if (!videoItem) {
-      console.error("Video not found:", videoId);
-      return res.status(404).end("Video not found");
+      console.error("❌ Video not found in course:", videoId);
+      return res.status(404).send("Video not found");
     }
 
     const isPublic = videoItem.status === "public";
 
+    // Token validation for private videos
     if (!isPublic) {
       if (!token) {
-        console.error("Missing token for private video");
-        return res.status(403).end("Missing token");
+        console.error("🔒 Missing token for private video");
+        return res.status(403).send("Authentication required");
       }
 
       try {
@@ -599,50 +602,90 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
         const userId = decoded.split("|")[0];
 
         if (!verifyHLSToken(token, userId, courseId, videoId)) {
-          console.error("Invalid token");
-          return res.status(403).end("Invalid token");
+          console.error("❌ Invalid token");
+          return res.status(403).send("Invalid token");
         }
       } catch (err) {
-        console.error("Token verification error:", err);
-        return res.status(403).end("Invalid token");
+        console.error("🔒 Token verification error:", err);
+        return res.status(403).send("Invalid token");
       }
     }
 
     const basePath = path.join("/data/uploads/private/videos", videoId);
-    const filePath = path.join(basePath, file);
-
+    
     // Path traversal protection
-    if (!filePath.startsWith(basePath)) {
-      console.error("Path traversal attempt:", filePath);
-      return res.status(403).end("Invalid path");
+    if (!path.resolve(basePath, requestedFile).startsWith(path.resolve(basePath))) {
+      console.error("🚨 Path traversal attempt:", requestedFile);
+      return res.status(403).send("Invalid path");
     }
 
+    const filePath = path.join(basePath, requestedFile);
+
+    // Handle missing files - especially master.m3u8
     if (!fs.existsSync(filePath)) {
-      console.error(`File not found: ${filePath}`);
-      return res.status(404).end("File not found");
+      console.log(`⚠️  File not found: ${filePath}`);
+      
+      // If master.m3u8 is missing, create it on-the-fly
+      if (requestedFile === "master.m3u8") {
+        console.log("🔄 Generating master playlist on-the-fly");
+        
+        let masterContent = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,NAME="720p"
+720p/playlist.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,NAME="1080p"
+1080p/playlist.m3u8`;
+
+        // Add token to variant URLs for private videos
+        if (!isPublic && token) {
+          masterContent = masterContent.replace(
+            /(playlist\.m3u8)/g,
+            `$1?token=${token}`
+          );
+        }
+
+        res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        console.log("✅ Served dynamically generated master playlist");
+        return res.send(masterContent);
+      }
+      
+      return res.status(404).send("File not found");
     }
 
-    // Handle playlists (.m3u8)
-    if (file.endsWith(".m3u8")) {
+    // Handle playlists (.m3u8 files)
+    if (requestedFile.endsWith(".m3u8")) {
       let playlist = fs.readFileSync(filePath, "utf8");
-
-      // Debug log
-      if (file === "master.m3u8") {
-        console.log("✅ Serving master playlist successfully");
-      }
-
+      
+      // Debug logging
+      console.log(`📋 Serving ${requestedFile}, Size: ${playlist.length} chars`);
+      
+      // For private videos, rewrite URLs to include token
       if (!isPublic && token) {
-        // Rewrite .ts segment URLs
-        playlist = playlist.replace(/(seg_\d+\.ts)/g, `$1?token=${token}`);
+        console.log(`🔐 Adding token to playlist: ${token.substring(0, 20)}...`);
         
-        // Rewrite variant playlist URLs (720p/index.m3u8, 1080p/index.m3u8)
-        playlist = playlist.replace(/(720p\/index\.m3u8|1080p\/index\.m3u8)/g, `$1?token=${token}`);
+        // For variant playlists (720p/playlist.m3u8, 1080p/playlist.m3u8)
+        if (requestedFile.includes("playlist.m3u8")) {
+          // Add token to segment URLs
+          playlist = playlist.replace(
+            /(segment_\d+\.ts)/g,
+            `../$1?token=${token}`
+          );
+          
+          // Add token to key URI
+          playlist = playlist.replace(
+            /URI="([^"]+)"/g,
+            `URI="$1?token=${token}"`
+          );
+        }
         
-        // Rewrite encryption key URI if present
-        playlist = playlist.replace(
-          /(URI=")([^"]+)(")/g,
-          (match, p1, uri, p3) => `${p1}${uri}?token=${token}${p3}`
-        );
+        // For master playlist
+        if (requestedFile === "master.m3u8") {
+          playlist = playlist.replace(
+            /(720p\/playlist\.m3u8|1080p\/playlist\.m3u8)/g,
+            `$1?token=${token}`
+          );
+        }
       }
 
       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
@@ -651,18 +694,49 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     }
 
     // Handle .ts segments
-    if (file.endsWith(".ts")) {
+    if (requestedFile.endsWith(".ts")) {
+      const stats = fs.statSync(filePath);
+      const fileSize = stats.size;
+      
+      // Handle range requests for seeking
+      const range = req.headers.range;
+      if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const chunkSize = (end - start) + 1;
+        
+        res.writeHead(206, {
+          "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": chunkSize,
+          "Content-Type": "video/mp2t",
+          "Cache-Control": "public, max-age=31536000"
+        });
+        
+        return fs.createReadStream(filePath, { start, end }).pipe(res);
+      }
+      
+      // Full file request
       res.setHeader("Content-Type", "video/mp2t");
+      res.setHeader("Content-Length", fileSize);
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+      return fs.createReadStream(filePath).pipe(res);
+    }
+
+    // Handle encryption key
+    if (requestedFile.endsWith(".key")) {
+      res.setHeader("Content-Type", "application/octet-stream");
       res.setHeader("Cache-Control", "no-store");
       return fs.createReadStream(filePath).pipe(res);
     }
 
-    // Other files
-    console.error("Unsupported file type:", file);
-    res.status(404).end("Unsupported file type");
-  } catch (err) {
-    console.error("❌ Streaming error:", err);
-    res.status(500).end("Server error");
+    console.error("❌ Unsupported file type:", requestedFile);
+    res.status(400).send("Unsupported file type");
+    
+  } catch (error) {
+    console.error("💥 Streaming error:", error);
+    res.status(500).send("Server error");
   }
 });
 router.get("/course/key/:videoId", async (req, res) => {
@@ -670,31 +744,53 @@ router.get("/course/key/:videoId", async (req, res) => {
     const { videoId } = req.params;
     const { token } = req.query;
 
-    if (!token) return res.status(403).end("Missing token");
+    console.log(`🔑 Key request for video: ${videoId}`);
 
-    const decoded = Buffer.from(token, "base64url").toString();
-    const [userId, courseId, vid] = decoded.split("|");
+    if (!token) {
+      console.error("❌ Missing token for key request");
+      return res.status(403).send("Missing token");
+    }
 
-    if (!verifyHLSToken(token, userId, courseId, videoId)) {
-      return res.status(403).end("Invalid token");
+    try {
+      const decoded = Buffer.from(token, "base64url").toString();
+      const [userId, courseId, vid] = decoded.split("|");
+      
+      if (vid !== videoId) {
+        console.error("❌ Video ID mismatch in token");
+        return res.status(403).send("Invalid token");
+      }
+
+      if (!verifyHLSToken(token, userId, courseId, videoId)) {
+        console.error("❌ Token verification failed");
+        return res.status(403).send("Invalid token");
+      }
+      
+      console.log(`✅ Token valid for user: ${userId}, course: ${courseId}`);
+    } catch (err) {
+      console.error("🔒 Token decoding error:", err);
+      return res.status(403).send("Invalid token format");
     }
 
     const keyPath = path.join(
       "/data/uploads/private/videos",
       videoId,
-      "key.key",
+      "enc.key"
     );
 
     if (!fs.existsSync(keyPath)) {
-      return res.status(404).end("Key not found");
+      console.error("❌ Encryption key not found at:", keyPath);
+      return res.status(404).send("Key not found");
     }
 
+    console.log(`✅ Serving encryption key for: ${videoId}`);
     res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Access-Control-Allow-Origin", "*");
     fs.createReadStream(keyPath).pipe(res);
-  } catch (err) {
-    console.error(err);
-    res.status(500).end("Server error");
+    
+  } catch (error) {
+    console.error("💥 Key delivery error:", error);
+    res.status(500).send("Server error");
   }
 });
 
@@ -708,4 +804,140 @@ router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Debug route to check HLS output structure
+router.get("/course/debug/:videoId", async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const baseDir = path.join("/data/uploads/private/videos", videoId);
+    
+    if (!fs.existsSync(baseDir)) {
+      return res.json({ error: "Video directory not found", videoId, exists: false });
+    }
+    
+    const structure = {
+      videoId,
+      baseDir,
+      exists: true,
+      files: fs.readdirSync(baseDir),
+      variants: {}
+    };
+    
+    // Check master playlist
+    const masterPath = path.join(baseDir, "master.m3u8");
+    if (fs.existsSync(masterPath)) {
+      structure.master = {
+        exists: true,
+        content: fs.readFileSync(masterPath, 'utf8'),
+        size: fs.statSync(masterPath).size
+      };
+    } else {
+      structure.master = { exists: false };
+    }
+    
+    // Check variants
+    ["720p", "1080p"].forEach(variant => {
+      const variantDir = path.join(baseDir, variant);
+      const playlistPath = path.join(variantDir, "playlist.m3u8");
+      
+      structure.variants[variant] = {
+        dirExists: fs.existsSync(variantDir),
+        playlistExists: fs.existsSync(playlistPath),
+        segmentCount: 0,
+        segments: []
+      };
+      
+      if (fs.existsSync(variantDir)) {
+        const files = fs.readdirSync(variantDir);
+        const segments = files.filter(f => f.endsWith('.ts'));
+        structure.variants[variant].segmentCount = segments.length;
+        structure.variants[variant].segments = segments.slice(0, 5); // First 5
+        structure.variants[variant].files = files;
+        
+        if (fs.existsSync(playlistPath)) {
+          structure.variants[variant].playlistContent = fs.readFileSync(playlistPath, 'utf8').substring(0, 500);
+        }
+      }
+    });
+    
+    res.json(structure);
+  } catch (error) {
+    console.error("Debug error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Job status route
+router.get("/course/status/:videoId", async (req, res) => {
+  const { videoId } = req.params;
+  const job = videoJobs[videoId];
+  
+  if (!job) {
+    return res.status(404).json({ error: "Job not found" });
+  }
+  
+  res.json({
+    videoId,
+    status: job.status,
+    progress: job.percent,
+    ...(job.error && { error: job.error })
+  });
+});
+// Helper function to check HLS output
+const checkHLSOutput = async (videoId) => {
+  const baseDir = path.join("/data/uploads/private/videos", videoId);
+  
+  console.log("\n🔍 ===== HLS OUTPUT CHECK =====");
+  console.log(`Video ID: ${videoId}`);
+  console.log(`Base Directory: ${baseDir}`);
+  
+  if (!fs.existsSync(baseDir)) {
+    console.log("❌ Base directory does not exist!");
+    return false;
+  }
+  
+  // Check master playlist
+  const masterPath = path.join(baseDir, "master.m3u8");
+  if (fs.existsSync(masterPath)) {
+    const masterContent = fs.readFileSync(masterPath, 'utf8');
+    console.log("✅ Master playlist found:");
+    console.log("--- Master Playlist Content ---");
+    console.log(masterContent);
+    console.log("-----------------------------");
+  } else {
+    console.log("❌ Master playlist NOT found at:", masterPath);
+  }
+  
+  // Check variants
+  const variants = ["720p", "1080p"];
+  for (const variant of variants) {
+    console.log(`\n📁 Checking ${variant}:`);
+    const variantDir = path.join(baseDir, variant);
+    
+    if (!fs.existsSync(variantDir)) {
+      console.log(`❌ ${variant} directory NOT found`);
+      continue;
+    }
+    
+    const playlistPath = path.join(variantDir, "playlist.m3u8");
+    if (fs.existsSync(playlistPath)) {
+      const playlistContent = fs.readFileSync(playlistPath, 'utf8');
+      console.log(`✅ ${variant}/playlist.m3u8 found`);
+      console.log(`📄 First 3 lines:`);
+      console.log(playlistContent.split('\n').slice(0, 3).join('\n'));
+      
+      // Count segments
+      const segments = fs.readdirSync(variantDir).filter(f => f.endsWith('.ts'));
+      console.log(`📊 Found ${segments.length} .ts segments`);
+      
+      if (segments.length > 0) {
+        console.log(`📦 Sample segments: ${segments.slice(0, 3).join(', ')}`);
+      }
+    } else {
+      console.log(`❌ ${variant}/playlist.m3u8 NOT found`);
+    }
+  }
+  
+  console.log("================================\n");
+  return true;
+};
 export default router;

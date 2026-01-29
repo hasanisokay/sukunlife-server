@@ -1484,55 +1484,57 @@ router.post(
   strictAdminMiddleware,
   uploadPrivateFile.single("file"),
   async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: "No file" });
-    const { status } = req.body;
-    
-    // non-video
-    if (!req.file.mimetype.startsWith("video/")) {
-      return res.json({
-        message: "File uploaded",
-        filename: req.file.filename,
-        mime: req.file.mimetype,
-      });
-    }
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const { status } = req.body;
+      
+      // Non-video files
+      if (!req.file.mimetype.startsWith("video/")) {
+        return res.json({
+          message: "File uploaded",
+          filename: req.file.filename,
+          mime: req.file.mimetype,
+        });
+      }
 
-    const inputPath = req.file.path;
-    const videoId = path.basename(inputPath, path.extname(inputPath));
-    const baseDir = path.join("/data/uploads/private/videos", videoId);
-    fs.mkdirSync(baseDir, { recursive: true });
+      const inputPath = req.file.path;
+      const videoId = path.basename(inputPath, path.extname(inputPath));
+      const baseDir = path.join("/data/uploads/private/videos", videoId);
+      
+      // Create directory structure
+      fs.mkdirSync(baseDir, { recursive: true });
+      fs.mkdirSync(path.join(baseDir, "720p"), { recursive: true });
+      fs.mkdirSync(path.join(baseDir, "1080p"), { recursive: true });
 
-    // Create folders that match the playlist names
-    const v720p = path.join(baseDir, "720p");
-    const v1080p = path.join(baseDir, "1080p");
-    fs.mkdirSync(v720p, { recursive: true });
-    fs.mkdirSync(v1080p, { recursive: true });
+      // HLS encryption setup for private videos
+      let hlsKeyArgs = "";
+      if (status === "private") {
+        const keyPath = path.join(baseDir, "enc.key");
+        const keyInfoPath = path.join(baseDir, "keyinfo.txt");
 
-    const keyPath = path.join(baseDir, "key.key");
-    const keyInfoPath = path.join(baseDir, "keyinfo.txt");
+        // Generate encryption key
+        const key = crypto.randomBytes(16);
+        fs.writeFileSync(keyPath, key);
+        
+        // Create keyinfo file format: URL\nKEY_PATH\nIV(optional)
+        const keyUrl = `${process.env.SERVER_URL}/api/user/course/key/${videoId}`;
+        const keyInfoContent = `${keyUrl}\n${keyPath}\n${key.toString('hex')}`;
+        fs.writeFileSync(keyInfoPath, keyInfoContent);
+        
+        hlsKeyArgs = `-hls_key_info_file "${keyInfoPath}" -hls_enc 1 -hls_enc_key_url "${keyUrl}"`;
+      }
 
-    let hlsKeyArgs = "";
-
-    if (status === "private") {
-      fs.writeFileSync(keyPath, crypto.randomBytes(16));
-
-      const keyUrl = `${process.env.SERVER_URL}/api/user/course/key/${videoId}`;
-      fs.writeFileSync(keyInfoPath, `${keyUrl}\n${keyPath}\n`);
-
-      hlsKeyArgs = `-hls_key_info_file "${keyInfoPath}"`;
-    }
-
-    // FIXED: Use named variants that match folder names
-    const cmd = `
+      // Updated FFmpeg command with proper mapping
+      const cmd = `
 ffmpeg -y -i "${inputPath}" \
--filter_complex "
-[0:v]split=2[v1][v2];
-[v1]scale=w=1280:h=720:force_original_aspect_ratio=decrease[v720];
-[v2]scale=w=1920:h=1080:force_original_aspect_ratio=decrease[v1080]
-" \
+-filter_complex \
+"[0:v]split=2[v1][v2]; \
+[v1]scale=w=1280:h=720:force_original_aspect_ratio=decrease[v720]; \
+[v2]scale=w=1920:h=1080:force_original_aspect_ratio=decrease[v1080]" \
 -map "[v720]" -c:v:0 libx264 -preset veryfast -crf 23 -b:v:0 2500k -maxrate:v:0 3500k -bufsize:v:0 7000k \
 -map "[v1080]" -c:v:1 libx264 -preset veryfast -crf 23 -b:v:1 5000k -maxrate:v:1 7000k -bufsize:v:1 14000k \
--map 0:a -c:a:0 aac -b:a:0 128k \
--map 0:a -c:a:1 aac -b:a:1 128k \
+-map 0:a:0 -c:a:0 aac -b:a:0 128k \
+-map 0:a:0 -c:a:1 aac -b:a:1 128k \
 -f hls \
 -hls_time 6 \
 -hls_playlist_type vod \
@@ -1540,36 +1542,72 @@ ffmpeg -y -i "${inputPath}" \
 -hls_segment_type mpegts \
 -g 180 -keyint_min 180 -sc_threshold 0 \
 ${hlsKeyArgs} \
--hls_segment_filename "${baseDir}/%v/seg_%03d.ts" \
--master_pl_name master.m3u8 \
+-hls_segment_filename "${baseDir}/%v/segment_%03d.ts" \
+-master_pl_name "master.m3u8" \
 -var_stream_map "v:0,a:0,name:720p v:1,a:1,name:1080p" \
--hls_list_size 0 \
-"${baseDir}/%v/index.m3u8"
-`;
+"${baseDir}/%v/playlist.m3u8"
+      `.trim();
 
-    videoJobs[videoId] = { status: "queued", percent: 0 };
+      console.log("🚀 Starting video transcoding for:", videoId);
+      console.log("📁 Output directory:", baseDir);
+      console.log("🔐 Encryption:", status === "private" ? "Enabled" : "Disabled");
 
-    addJob(videoId, cmd, async () => {
-      // Clean up original file after encoding
-      fs.promises.unlink(inputPath).catch(console.error);
-      
-      // Log success
-      console.log(`Video ${videoId} processing completed`);
-      
-      // Verify master playlist exists
-      const masterPath = path.join(baseDir, "master.m3u8");
-      if (fs.existsSync(masterPath)) {
-        const content = fs.readFileSync(masterPath, "utf8");
-        console.log("Final master playlist:", content);
-      }
-    });
+      // Start processing job
+      videoJobs[videoId] = { status: "queued", percent: 0 };
 
-    res.json({
-      message: "Video uploaded. Processing started.",
-      videoId,
-      filename: videoId,
-    });
-  },
+      addJob(videoId, cmd, async (error, stdout, stderr) => {
+        if (error) {
+          console.error("❌ FFmpeg error:", error);
+          console.error("FFmpeg stderr:", stderr);
+          videoJobs[videoId] = { status: "failed", error: stderr };
+          return;
+        }
+
+        try {
+          // Clean up original file
+          await fs.promises.unlink(inputPath);
+          
+          // Debug output structure
+          await checkHLSOutput(videoId);
+          
+          // Verify master playlist
+          const masterPath = path.join(baseDir, "master.m3u8");
+          if (fs.existsSync(masterPath)) {
+            const content = fs.readFileSync(masterPath, 'utf8');
+            console.log("✅ Master playlist created successfully");
+            console.log("📋 Master playlist content:\n", content);
+          } else {
+            console.log("⚠️  Master playlist not found, creating manually...");
+            // Create master playlist if FFmpeg didn't
+            const masterContent = `#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,NAME="720p"
+720p/playlist.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,NAME="1080p"
+1080p/playlist.m3u8`;
+            fs.writeFileSync(masterPath, masterContent);
+          }
+          
+          videoJobs[videoId] = { status: "completed", percent: 100 };
+          console.log(`✅ Video ${videoId} processing completed successfully`);
+        } catch (cleanupError) {
+          console.error("Cleanup error:", cleanupError);
+          videoJobs[videoId] = { status: "completed_with_warnings", percent: 100 };
+        }
+      });
+
+      res.json({
+        message: "Video uploaded. Processing started.",
+        videoId,
+        filename: videoId,
+        jobId: videoId,
+        statusUrl: `${process.env.SERVER_URL}/api/user/course/status/${videoId}`
+      });
+
+    } catch (error) {
+      console.error("Upload error:", error);
+      res.status(500).json({ error: "Upload failed", details: error.message });
+    }
+  }
 );
-
 export default router;

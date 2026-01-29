@@ -25,7 +25,7 @@ const corsOptions = {
       "https://sukunlife.com",
       "https://www.sukunlife.com",
       "https://api.sukunlife.com", 
-      // "https://upload.sukunlife.com"
+      "https://upload.sukunlife.com"
     ];
 
     if (!origin || allowedOrigins.includes(origin)) {
