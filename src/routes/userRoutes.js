@@ -203,19 +203,22 @@ router.put(
       };
 
       switch (action) {
-        case "mark-viewed": // NEW: Track viewed items
-          if (!itemId) {
-            return res.status(400).json({ error: "itemId is required" });
-          }
+case "mark-viewed":
+  if (!itemId) {
+    return res.status(400).json({ error: "itemId is required" });
+  }
 
-          // Add item to viewed items if not already
-          if (!currentProgress.viewedItems.includes(itemId)) {
-            currentProgress.viewedItems.push(itemId);
-          }
-          
-          currentProgress.currentItem = itemId;
-          break;
-
+  // Track last viewed item
+  currentProgress.lastViewedItem = itemId;
+  
+  // Add to viewed items if not already
+  if (!currentProgress.viewedItems?.includes(itemId)) {
+    currentProgress.viewedItems = currentProgress.viewedItems || [];
+    currentProgress.viewedItems.push(itemId);
+  }
+  
+  currentProgress.lastUpdated = new Date();
+  break;
         case "mark-complete":
           if (!itemId) {
             return res.status(400).json({ error: "itemId is required" });
