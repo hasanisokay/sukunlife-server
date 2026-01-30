@@ -226,7 +226,7 @@ router.put(
               currentProgress.completedModules.push(moduleId);
             }
           }
-
+        currentProgress.currentItem = itemId;
           break;
 
         case "update-video-time":
