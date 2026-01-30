@@ -157,6 +157,7 @@ router.get(
   },
 );
 
+// Add "mark-viewed" action and "viewedItems" field
 router.put(
   "/update-progress/:courseId",
   lowUserOnlyMiddleware,
@@ -201,24 +202,17 @@ router.put(
         videoProgress: {},
       };
 
-      // Initialize viewedItems if it doesn't exist (for existing users)
-      if (!currentProgress.viewedItems) {
-        currentProgress.viewedItems = [];
-      }
-
       switch (action) {
-        case "mark-viewed":
-          // NEW ACTION: Mark item as viewed (unlocks next item)
+        case "mark-viewed": // NEW: Track viewed items
           if (!itemId) {
             return res.status(400).json({ error: "itemId is required" });
           }
 
-          // Add to viewed items if not already there
+          // Add item to viewed items if not already
           if (!currentProgress.viewedItems.includes(itemId)) {
             currentProgress.viewedItems.push(itemId);
           }
           
-          // Also set as current item
           currentProgress.currentItem = itemId;
           break;
 
@@ -231,8 +225,8 @@ router.put(
           if (!currentProgress.completedItems.includes(itemId)) {
             currentProgress.completedItems.push(itemId);
           }
-
-          // Mark as viewed too
+          
+          // Also mark as viewed if not already
           if (!currentProgress.viewedItems.includes(itemId)) {
             currentProgress.viewedItems.push(itemId);
           }
@@ -270,7 +264,7 @@ router.put(
             lastWatched: new Date(),
           };
           
-          // Mark as viewed when video starts playing
+          // Mark as viewed when video progress is tracked
           if (!currentProgress.viewedItems.includes(itemId)) {
             currentProgress.viewedItems.push(itemId);
           }
@@ -290,15 +284,15 @@ router.put(
             attempts: (currentProgress.quizScores[itemId]?.attempts || 0) + 1,
             lastAttempt: new Date(),
           };
+          
+          // Mark as viewed when quiz is attempted
+          if (!currentProgress.viewedItems.includes(itemId)) {
+            currentProgress.viewedItems.push(itemId);
+          }
 
           // Mark as completed if passed
           if (data.passed && !currentProgress.completedItems.includes(itemId)) {
             currentProgress.completedItems.push(itemId);
-          }
-          
-          // Mark as viewed
-          if (!currentProgress.viewedItems.includes(itemId)) {
-            currentProgress.viewedItems.push(itemId);
           }
           break;
 
@@ -308,7 +302,7 @@ router.put(
           }
           currentProgress.currentItem = itemId;
           
-          // Mark as viewed when set as current
+          // Also mark as viewed
           if (!currentProgress.viewedItems.includes(itemId)) {
             currentProgress.viewedItems.push(itemId);
           }
@@ -366,6 +360,8 @@ router.put(
     }
   },
 );
+
+// Also update the course-progress endpoint to include viewedItems
 router.get(
   "/course-progress/:courseId",
   strictUserOnlyMiddleware,
@@ -395,7 +391,7 @@ router.get(
         courseId: courseId,
         completedItems: [],
         completedModules: [],
-        viewedItems: [], // NEW
+        viewedItems: [], // Include this
         currentItem: null,
         overallProgress: 0,
         startedOn: null,
@@ -404,11 +400,6 @@ router.get(
         quizScores: {},
         videoProgress: {},
       };
-
-      // Initialize viewedItems if missing
-      if (!userProgress.viewedItems) {
-        userProgress.viewedItems = [];
-      }
 
       // Enrich progress data with course content
       const enrichedProgress = {
@@ -433,7 +424,7 @@ router.get(
               type: item.type,
               order: item.order,
               isCompleted: userProgress.completedItems.includes(item.itemId),
-              isViewed: userProgress.viewedItems.includes(item.itemId), // NEW
+              isViewed: userProgress.viewedItems.includes(item.itemId), // Include this
               videoProgress: userProgress.videoProgress[item.itemId] || null,
               quizScore: userProgress.quizScores[item.itemId] || null,
             })),
