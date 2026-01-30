@@ -10,7 +10,7 @@ if (!fs.existsSync(tmpDir)) {
   fs.mkdirSync(tmpDir, { recursive: true });
 }
 
-const getFolderFromMime = (mimetype) => {
+export const getFolderFromMime = (mimetype) => {
   if (mimetype.startsWith("video/")) return "tmp"; //  TEMP
   if (mimetype === "application/pdf") return "pdfs";
   if (mimetype.startsWith("audio/")) return "audio";

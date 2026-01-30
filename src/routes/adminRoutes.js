@@ -9,8 +9,7 @@ import strictAdminMiddleware from "../middlewares/strictAdminMiddleware.js";
 import dbConnect from "../config/db.mjs";
 import { ObjectId } from "mongodb";
 import convertToDhakaTime from "../utils/convertToDhakaTime.mjs";
-import { uploadPrivateFile } from "../middlewares/uploadPrivateFile.middleware.js";
-import { uploadPublicVideo } from "../middlewares/uploadPublicVideo.middleware.js";
+import { getFolderFromMime, uploadPrivateFile } from "../middlewares/uploadPrivateFile.middleware.js";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -1646,6 +1645,7 @@ router.post(
 
     // non-video
     if (!req.file.mimetype.startsWith("video/")) {
+      const folder = getFolderFromMime(req?.file?.mimetype);
       return res.json({
         message: "File uploaded",
         filename: req.file.filename,
