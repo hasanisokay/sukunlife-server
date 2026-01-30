@@ -165,7 +165,7 @@ router.put(
       const userId = req.user._id;
       const { courseId } = req.params;
       const {
-        action, // 'mark-complete', 'update-video-time', 'quiz-result'
+        action, // 'mark-complete', 'update-video-time', 'quiz-result', 'set-current-item', 'mark-viewed'
         itemId,
         moduleId,
         data, // additional data based on action
@@ -192,6 +192,7 @@ router.put(
         courseId: courseId,
         completedItems: [],
         completedModules: [],
+        viewedItems: [], // NEW: Track viewed items
         currentItem: null,
         overallProgress: 0,
         lastUpdated: new Date(),
@@ -200,7 +201,27 @@ router.put(
         videoProgress: {},
       };
 
+      // Initialize viewedItems if it doesn't exist (for existing users)
+      if (!currentProgress.viewedItems) {
+        currentProgress.viewedItems = [];
+      }
+
       switch (action) {
+        case "mark-viewed":
+          // NEW ACTION: Mark item as viewed (unlocks next item)
+          if (!itemId) {
+            return res.status(400).json({ error: "itemId is required" });
+          }
+
+          // Add to viewed items if not already there
+          if (!currentProgress.viewedItems.includes(itemId)) {
+            currentProgress.viewedItems.push(itemId);
+          }
+          
+          // Also set as current item
+          currentProgress.currentItem = itemId;
+          break;
+
         case "mark-complete":
           if (!itemId) {
             return res.status(400).json({ error: "itemId is required" });
@@ -209,6 +230,11 @@ router.put(
           // Add item to completed items if not already
           if (!currentProgress.completedItems.includes(itemId)) {
             currentProgress.completedItems.push(itemId);
+          }
+
+          // Mark as viewed too
+          if (!currentProgress.viewedItems.includes(itemId)) {
+            currentProgress.viewedItems.push(itemId);
           }
 
           // Check if all items in module are completed
@@ -226,7 +252,7 @@ router.put(
               currentProgress.completedModules.push(moduleId);
             }
           }
-        currentProgress.currentItem = itemId;
+          currentProgress.currentItem = itemId;
           break;
 
         case "update-video-time":
@@ -243,6 +269,11 @@ router.put(
             percentage: data.percentage,
             lastWatched: new Date(),
           };
+          
+          // Mark as viewed when video starts playing
+          if (!currentProgress.viewedItems.includes(itemId)) {
+            currentProgress.viewedItems.push(itemId);
+          }
           break;
 
         case "quiz-result":
@@ -264,6 +295,11 @@ router.put(
           if (data.passed && !currentProgress.completedItems.includes(itemId)) {
             currentProgress.completedItems.push(itemId);
           }
+          
+          // Mark as viewed
+          if (!currentProgress.viewedItems.includes(itemId)) {
+            currentProgress.viewedItems.push(itemId);
+          }
           break;
 
         case "set-current-item":
@@ -271,6 +307,11 @@ router.put(
             return res.status(400).json({ error: "itemId is required" });
           }
           currentProgress.currentItem = itemId;
+          
+          // Mark as viewed when set as current
+          if (!currentProgress.viewedItems.includes(itemId)) {
+            currentProgress.viewedItems.push(itemId);
+          }
           break;
 
         default:
@@ -354,6 +395,7 @@ router.get(
         courseId: courseId,
         completedItems: [],
         completedModules: [],
+        viewedItems: [], // NEW
         currentItem: null,
         overallProgress: 0,
         startedOn: null,
@@ -362,6 +404,11 @@ router.get(
         quizScores: {},
         videoProgress: {},
       };
+
+      // Initialize viewedItems if missing
+      if (!userProgress.viewedItems) {
+        userProgress.viewedItems = [];
+      }
 
       // Enrich progress data with course content
       const enrichedProgress = {
@@ -386,6 +433,7 @@ router.get(
               type: item.type,
               order: item.order,
               isCompleted: userProgress.completedItems.includes(item.itemId),
+              isViewed: userProgress.viewedItems.includes(item.itemId), // NEW
               videoProgress: userProgress.videoProgress[item.itemId] || null,
               quizScore: userProgress.quizScores[item.itemId] || null,
             })),
