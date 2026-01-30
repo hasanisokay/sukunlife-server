@@ -10,6 +10,7 @@ import lowUserOnlyMiddleware from "../middlewares/lowUserOnlyMiddleware.js";
 import strictUserOnlyMiddleware from "../middlewares/strictUserOnlyMiddleware.mjs";
 import { uploadPublicFile } from "../middlewares/upload.middleware.js";
 import { createHLSToken, verifyHLSToken } from "../utils/hlsToken.js";
+import { createFileToken, verifyFileToken } from "../utils/fileTokens.js";
 const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
@@ -909,6 +910,131 @@ router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
   );
 
   res.json({ ok: true });
+});
+
+router.post(
+  "/course/file/token",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    try {
+      const { courseId, filename } = req.body;
+      const userId = req.user.id;
+      const course = await courseCollection.findOne({
+        courseId,
+        students: req?.user?._id,
+      });
+      if (!course) {
+        return res.status(404).json({ error: "Course not found" });
+      }
+
+      let fileItem = null;
+
+      for (const module of course.modules) {
+        for (const item of module.items) {
+          if (item.type !== "video" && item.url?.filename === filename) {
+            fileItem = item;
+            break;
+          }
+        }
+        if (fileItem) break;
+      }
+
+      if (!fileItem) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
+      if (fileItem.status === "public") {
+        return res.json({ token: null });
+      }
+
+      const token = createFileToken(userId, courseId, filename);
+
+      res.json({
+        token,
+        expiresIn: 600,
+      });
+    } catch (err) {
+      console.error("❌ File token error:", err);
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
+
+router.get("/course/file/:courseId/:filename", async (req, res) => {
+  try {
+    const { courseId, filename } = req.params;
+    const { token } = req.query;
+
+    const course = await courseCollection.findOne({ courseId });
+    if (!course) {
+      return res.status(404).end("Course not found");
+    }
+
+    let fileItem = null;
+
+    for (const module of course?.modules) {
+      for (const item of module?.items) {
+        if (item.type !== "video" && item.url?.filename === filename) {
+          fileItem = item;
+          break;
+        }
+      }
+      if (fileItem) break;
+    }
+
+    if (!fileItem) {
+      return res.status(404).end("File not found");
+    }
+
+    const isPublic = fileItem.status === "public";
+
+    // Token check
+    if (!isPublic) {
+      if (!token) {
+        return res.status(403).end("Missing token");
+      }
+
+      try {
+        const decoded = Buffer.from(token, "base64url").toString();
+        const userId = decoded.split("|")[0];
+
+        if (!verifyFileToken(token, userId, courseId, filename)) {
+          return res.status(403).end("Invalid token");
+        }
+      } catch {
+        return res.status(403).end("Invalid token");
+      }
+    }
+
+    const baseDir = path.join("/data/uploads/private", fileItem.url.path);
+
+    const filePath = path.join(baseDir, filename);
+
+    // 🛡️ Path traversal protection
+    if (!filePath.startsWith(baseDir)) {
+      return res.status(403).end("Invalid path");
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).end("File not found");
+    }
+
+    // 📦 Headers
+    res.setHeader("Content-Type", fileItem.mime || "application/octet-stream");
+
+    res.setHeader(
+      "Content-Disposition",
+      fileItem.inline ? "inline" : `attachment; filename="${filename}"`,
+    );
+
+    res.setHeader("Cache-Control", "no-store");
+
+    // 🚀 Stream
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error("❌ File serve error:", err);
+    res.status(500).end("Server error");
+  }
 });
 
 export default router;
