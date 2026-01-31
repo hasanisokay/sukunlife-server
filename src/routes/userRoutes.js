@@ -1072,9 +1072,9 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
     if (!filePathFromDb) {
       filePathFromDb = getFolderFromMime(fileItem?.url?.mime);
     }
-    const baseDir = path.join("/data/uploads/private", filePathFromDb);
+    const baseDir = path.join("/data/uploads/private");
 
-    const filePath = path.join(baseDir, filename);
+    const filePath = path.join(baseDir, filePathFromDb);
 
     if (!filePath.startsWith(baseDir)) {
       return res.status(403).end("Invalid path");
