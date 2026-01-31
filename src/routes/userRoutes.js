@@ -1083,16 +1083,16 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
     if (!fs.existsSync(filePath)) {
       return res.status(404).end("File not found");
     }
-
-    // res.setHeader(
-    //   "Content-Type",
-    //   fileItem?.url?.mime==="image" ? 'image' :fileItem?.url?.mime || "application/octet-stream",
-    // );
-    // res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
-
     const mimeType = getMimeTypeForHeader(filename, fileItem?.url?.mime);
     const contentDisposition = getContentDisposition(filename, mimeType);
-    console.log(`MimeType for item ${filename} is ${mimeType}`);
+
+    const stats = fs.statSync(filePath);
+
+    if (stats.isDirectory()) {
+      console.log("Requested path is a directory, not a file", filePath);
+      return res.status(400).end("Requested path is a directory, not a file");
+    }
+
     res.setHeader("Content-Type", mimeType);
     res.setHeader("Content-Disposition", contentDisposition);
 
