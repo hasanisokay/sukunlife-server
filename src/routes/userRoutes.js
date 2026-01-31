@@ -11,6 +11,7 @@ import strictUserOnlyMiddleware from "../middlewares/strictUserOnlyMiddleware.mj
 import { uploadPublicFile } from "../middlewares/upload.middleware.js";
 import { createHLSToken, verifyHLSToken } from "../utils/hlsToken.js";
 import { createFileToken, verifyFileToken } from "../utils/fileTokens.js";
+import { getFolderFromMime } from "../middlewares/uploadPrivateFile.middleware.js";
 const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
