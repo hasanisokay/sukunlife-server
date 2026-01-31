@@ -11,7 +11,10 @@ import { uploadPublicFile } from "../middlewares/upload.middleware.js";
 import { createHLSToken, verifyHLSToken } from "../utils/hlsToken.js";
 import { createFileToken, verifyFileToken } from "../utils/fileTokens.js";
 import { getFolderFromMime } from "../middlewares/uploadPrivateFile.middleware.js";
-import { getContentDisposition, getMimeTypeForHeader } from "../utils/getFileType.js";
+import {
+  getContentDisposition,
+  getMimeTypeForHeader,
+} from "../utils/getFileType.js";
 const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
@@ -1089,7 +1092,7 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
 
     const mimeType = getMimeTypeForHeader(filename, fileItem?.url?.mime);
     const contentDisposition = getContentDisposition(filename, mimeType);
-console.log(`MimeType for item ${filename} is ${mimeType}`)
+    console.log(`MimeType for item ${filename} is ${mimeType}`);
     res.setHeader("Content-Type", mimeType);
     res.setHeader("Content-Disposition", contentDisposition);
 
