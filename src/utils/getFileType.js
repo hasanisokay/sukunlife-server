@@ -1,11 +1,11 @@
 import mime from "mime-types";
 
 export const getMimeTypeForHeader = (filename, storedMime = null) => {
-  const detectedMime = mime.lookup(filename);
+  if (storedMime) return storedMime;
 
-  if (detectedMime) {
-    return detectedMime;
-  }
+  const detectedMime = mime.lookup(filename);
+  if (detectedMime) return detectedMime;
+
   const ext = getExtension(filename);
   return getMimeTypeByExtension(ext) || "application/octet-stream";
 };
@@ -42,38 +42,43 @@ const getMimeTypeByExtension = (extension) => {
     ".avif": "image/avif",
   };
 
-  // Check custom mappings first
   if (customMappings[extension]) {
     return customMappings[extension];
   }
 
-  // Use mime-types for everything else
-  return mime.lookup(extension);
+  return mime.lookup(extension.slice(1));
 };
 
 export const shouldDisplayInline = (mimeType) => {
   if (!mimeType) return false;
 
-  const inlineTypes = [
-    "image",
-    "video",
-    "audio",
-    "text",
+  const inlinePrefixes = [
+    "image/",
+    "video/",
+    "audio/",
+    "text/",
+    "font/",
+  ];
+
+  const inlineExact = [
     "application/pdf",
     "application/json",
     "application/xml",
     "application/javascript",
-    "font",
   ];
 
-  return inlineTypes.some((type) => mimeType.includes(type));
+  return (
+    inlinePrefixes.some((p) => mimeType.startsWith(p)) ||
+    inlineExact.includes(mimeType)
+  );
 };
+
 export const getContentDisposition = (filename, mimeType) => {
-  const safeFilename = encodeURIComponent(filename);
+  const encoded = encodeURIComponent(filename);
 
   if (shouldDisplayInline(mimeType)) {
-    return `inline; filename="${safeFilename}"`;
+    return `inline; filename="${encoded}"; filename*=UTF-8''${encoded}`;
   }
 
-  return `attachment; filename="${safeFilename}"`;
+  return `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`;
 };
