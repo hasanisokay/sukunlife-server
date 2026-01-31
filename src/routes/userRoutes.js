@@ -420,21 +420,40 @@ router.get(
               module?.moduleId,
             ),
             isViewed: userProgress?.completedModules.includes(module?.moduleId),
-            items: module.items.map((item) => ({
-              itemId: item?.itemId,
-              title: item?.title,
-              status: item?.status,
-              duration: item?.duration,
-              order: item?.order,
-              description: item?.description,
-              type: item?.type,
-              order: item?.order,
-              url: item?.url,
-              isCompleted: userProgress?.completedItems?.includes(item.itemId),
-              isViewed: userProgress?.viewedItems?.includes(item.itemId),
-              videoProgress: userProgress?.videoProgress[item.itemId] || null,
-              quizScore: userProgress?.quizScores[item.itemId] || null,
-            })),
+items: module.items.map((item) => ({
+  // common fields
+  itemId: item.itemId,
+  type: item.type,
+  status: item.status,
+  order: item.order,
+  title: item.title,
+
+  // optional common fields
+  ...(item.description && { description: item.description }),
+  ...(item.duration && { duration: item.duration }),
+  ...(item.url && { url: item.url }),
+
+  // textInstruction
+  ...(item.type === "textInstruction" && {
+    content: item.content,
+  }),
+
+  // quiz
+  ...(item.type === "quiz" && {
+    question: item.question,
+    options: item.options,
+    answer: item.answer,
+  }),
+
+  // user progress (conditional + safe)
+  ...(userProgress && {
+    isCompleted: userProgress.completedItems?.includes(item.itemId) || false,
+    isViewed: userProgress.viewedItems?.includes(item.itemId) || false,
+    videoProgress: userProgress.videoProgress?.[item.itemId] ?? null,
+    quizScore: userProgress.quizScores?.[item.itemId] ?? null,
+  }),
+}))
+
           })),
         },
       };
