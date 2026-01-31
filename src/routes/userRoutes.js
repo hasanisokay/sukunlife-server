@@ -1083,7 +1083,7 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
     }
 
     // 📦 Headers
-    res.setHeader("Content-Type", fileItem.mime || "application/octet-stream");
+res.setHeader("Content-Type", fileItem?.url?.mime || "application/octet-stream");
 res.setHeader(
   "Content-Disposition",
   `inline; filename="${filename}"`
