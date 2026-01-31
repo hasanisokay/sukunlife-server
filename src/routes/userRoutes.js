@@ -157,7 +157,6 @@ router.get(
   },
 );
 
-// Add "mark-viewed" action and "viewedItems" field
 router.put(
   "/update-progress/:courseId",
   lowUserOnlyMiddleware,
@@ -203,22 +202,22 @@ router.put(
       };
 
       switch (action) {
-case "mark-viewed":
-  if (!itemId) {
-    return res.status(400).json({ error: "itemId is required" });
-  }
+        case "mark-viewed":
+          if (!itemId) {
+            return res.status(400).json({ error: "itemId is required" });
+          }
 
-  // Track last viewed item
-  currentProgress.lastViewedItem = itemId;
-  
-  // Add to viewed items if not already
-  if (!currentProgress.viewedItems?.includes(itemId)) {
-    currentProgress.viewedItems = currentProgress.viewedItems || [];
-    currentProgress.viewedItems.push(itemId);
-  }
-  
-  currentProgress.lastUpdated = new Date();
-  break;
+          // Track last viewed item
+          currentProgress.lastViewedItem = itemId;
+
+          // Add to viewed items if not already
+          if (!currentProgress.viewedItems?.includes(itemId)) {
+            currentProgress.viewedItems = currentProgress.viewedItems || [];
+            currentProgress.viewedItems.push(itemId);
+          }
+
+          currentProgress.lastUpdated = new Date();
+          break;
         case "mark-complete":
           if (!itemId) {
             return res.status(400).json({ error: "itemId is required" });
@@ -228,7 +227,7 @@ case "mark-viewed":
           if (!currentProgress.completedItems.includes(itemId)) {
             currentProgress.completedItems.push(itemId);
           }
-          
+
           // Also mark as viewed if not already
           if (!currentProgress.viewedItems.includes(itemId)) {
             currentProgress.viewedItems.push(itemId);
@@ -266,7 +265,7 @@ case "mark-viewed":
             percentage: data.percentage,
             lastWatched: new Date(),
           };
-          
+
           // Mark as viewed when video progress is tracked
           if (!currentProgress.viewedItems.includes(itemId)) {
             currentProgress.viewedItems.push(itemId);
@@ -287,7 +286,7 @@ case "mark-viewed":
             attempts: (currentProgress.quizScores[itemId]?.attempts || 0) + 1,
             lastAttempt: new Date(),
           };
-          
+
           // Mark as viewed when quiz is attempted
           if (!currentProgress.viewedItems.includes(itemId)) {
             currentProgress.viewedItems.push(itemId);
@@ -304,7 +303,7 @@ case "mark-viewed":
             return res.status(400).json({ error: "itemId is required" });
           }
           currentProgress.currentItem = itemId;
-          
+
           // Also mark as viewed
           if (!currentProgress.viewedItems.includes(itemId)) {
             currentProgress.viewedItems.push(itemId);
@@ -370,21 +369,21 @@ router.get(
   strictUserOnlyMiddleware,
   async (req, res) => {
     try {
-      const userId = req.user._id;
+      const userId = req?.user?._id;
       const { courseId } = req.params;
-
+      console.log("from /user/course-progress/:courseId", { userId, courseId });
       if (!userId) {
         return res.status(401).json({ error: "User not authenticated" });
       }
-
-      // Get course details
-      const course = await courseCollection.findOne({ courseId });
+      const course = await courseCollection.findOne({
+        courseId,
+        students: userId,
+      });
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
       }
 
-      // Get user progress
       const user = await usersCollection.findOne(
         { _id: new ObjectId(userId) },
         { projection: { [`courseProgress.${courseId}`]: 1 } },
@@ -394,7 +393,7 @@ router.get(
         courseId: courseId,
         completedItems: [],
         completedModules: [],
-        viewedItems: [], // Include this
+        viewedItems: [],
         currentItem: null,
         overallProgress: 0,
         startedOn: null,
@@ -403,8 +402,6 @@ router.get(
         quizScores: {},
         videoProgress: {},
       };
-
-      // Enrich progress data with course content
       const enrichedProgress = {
         ...userProgress,
         course: {
@@ -414,28 +411,35 @@ router.get(
             (total, module) => total + module.items.length,
             0,
           ),
-          modules: course.modules.map((module) => ({
-            moduleId: module.moduleId,
-            title: module.title,
+          modules: course?.modules?.map((module) => ({
+            moduleId: module?.moduleId,
+            title: module?.title,
+            moduleId: module?.moduleId,
             order: module.order,
-            isCompleted: userProgress.completedModules.includes(
-              module.moduleId,
+            isCompleted: userProgress?.completedModules.includes(
+              module?.moduleId,
             ),
+            isViewed: userProgress?.completedModules.includes(module?.moduleId),
             items: module.items.map((item) => ({
-              itemId: item.itemId,
-              title: item.title,
-              type: item.type,
-              order: item.order,
-              isCompleted: userProgress.completedItems.includes(item.itemId),
-              isViewed: userProgress.viewedItems.includes(item.itemId), // Include this
-              videoProgress: userProgress.videoProgress[item.itemId] || null,
-              quizScore: userProgress.quizScores[item.itemId] || null,
+              itemId: item?.itemId,
+              title: item?.title,
+              status: item?.status,
+              duration: item?.duration,
+              order: item?.order,
+              description: item?.description,
+              type: item?.type,
+              order: item?.order,
+              url: item?.url,
+              isCompleted: userProgress?.completedItems?.includes(item.itemId),
+              isViewed: userProgress?.viewedItems?.includes(item.itemId),
+              videoProgress: userProgress?.videoProgress[item.itemId] || null,
+              quizScore: userProgress?.quizScores[item.itemId] || null,
             })),
           })),
         },
       };
 
-      res.json({
+      res.status(200).json({
         success: true,
         progress: enrichedProgress,
       });
