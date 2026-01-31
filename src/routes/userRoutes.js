@@ -1,7 +1,6 @@
 import express from "express";
 import fs from "fs";
 import path from "path";
-
 import dbConnect from "../config/db.mjs";
 import dotenv from "dotenv";
 import bcrypt from "bcrypt";
@@ -12,6 +11,7 @@ import { uploadPublicFile } from "../middlewares/upload.middleware.js";
 import { createHLSToken, verifyHLSToken } from "../utils/hlsToken.js";
 import { createFileToken, verifyFileToken } from "../utils/fileTokens.js";
 import { getFolderFromMime } from "../middlewares/uploadPrivateFile.middleware.js";
+import { getContentDisposition, getMimeTypeForHeader } from "../utils/getFileType.js";
 const router = express.Router();
 const db = await dbConnect();
 dotenv.config();
@@ -1073,7 +1073,6 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
 
     const filePath = path.join(baseDir, filename);
 
-    // 🛡️ Path traversal protection
     if (!filePath.startsWith(baseDir)) {
       return res.status(403).end("Invalid path");
     }
@@ -1082,17 +1081,24 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
       return res.status(404).end("File not found");
     }
 
-    // 📦 Headers
-res.setHeader("Content-Type", fileItem?.url?.mime || "application/octet-stream");
-res.setHeader(
-  "Content-Disposition",
-  `inline; filename="${filename}"`
-);
+    // res.setHeader(
+    //   "Content-Type",
+    //   fileItem?.url?.mime==="image" ? 'image' :fileItem?.url?.mime || "application/octet-stream",
+    // );
+    // res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
 
+    const mimeType = getMimeTypeForHeader(filename, fileItem?.url?.mime);
+    const contentDisposition = getContentDisposition(filename, mimeType);
+
+    res.setHeader("Content-Type", mimeType);
+    res.setHeader("Content-Disposition", contentDisposition);
+
+    if (mimeType.startsWith("text/") || mimeType === "application/json") {
+      res.setHeader("Content-Type", `${mimeType}; charset=utf-8`);
+    }
 
     res.setHeader("Cache-Control", "no-store");
 
-    // 🚀 Stream
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {
     console.error("❌ File serve error:", err);
