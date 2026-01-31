@@ -420,40 +420,42 @@ router.get(
               module?.moduleId,
             ),
             isViewed: userProgress?.completedModules.includes(module?.moduleId),
-items: module.items.map((item) => ({
-  // common fields
-  itemId: item.itemId,
-  type: item.type,
-  status: item.status,
-  order: item.order,
-  title: item.title,
+            items: module.items.map((item) => ({
+              // common fields
+              itemId: item.itemId,
+              type: item.type,
+              status: item.status,
+              order: item.order,
+              title: item.title,
 
-  // optional common fields
-  ...(item.description && { description: item.description }),
-  ...(item.duration && { duration: item.duration }),
-  ...(item.url && { url: item.url }),
+              // optional common fields
+              ...(item.description && { description: item.description }),
+              ...(item.duration && { duration: item.duration }),
+              ...(item.url && { url: item.url }),
 
-  // textInstruction
-  ...(item.type === "textInstruction" && {
-    content: item.content,
-  }),
+              // textInstruction
+              ...(item.type === "textInstruction" && {
+                content: item.content,
+              }),
 
-  // quiz
-  ...(item.type === "quiz" && {
-    question: item.question,
-    options: item.options,
-    answer: item.answer,
-  }),
+              // quiz
+              ...(item.type === "quiz" && {
+                question: item.question,
+                options: item.options,
+                answer: item.answer,
+              }),
 
-  // user progress (conditional + safe)
-  ...(userProgress && {
-    isCompleted: userProgress.completedItems?.includes(item.itemId) || false,
-    isViewed: userProgress.viewedItems?.includes(item.itemId) || false,
-    videoProgress: userProgress.videoProgress?.[item.itemId] ?? null,
-    quizScore: userProgress.quizScores?.[item.itemId] ?? null,
-  }),
-}))
-
+              // user progress (conditional + safe)
+              ...(userProgress && {
+                isCompleted:
+                  userProgress.completedItems?.includes(item.itemId) || false,
+                isViewed:
+                  userProgress.viewedItems?.includes(item.itemId) || false,
+                videoProgress:
+                  userProgress.videoProgress?.[item.itemId] ?? null,
+                quizScore: userProgress.quizScores?.[item.itemId] ?? null,
+              }),
+            })),
           })),
         },
       };
@@ -1039,7 +1041,7 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
 
     for (const module of course?.modules) {
       for (const item of module?.items) {
-        if (item.type !== "video" && item.url?.filename === filename) {
+        if (item.type !== "video" && item?.url?.filename === filename) {
           fileItem = item;
           break;
         }
@@ -1070,8 +1072,11 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
         return res.status(403).end("Invalid token");
       }
     }
-
-    const baseDir = path.join("/data/uploads/private", fileItem.url.path);
+    let filePathFromDb = fileItem?.url?.path;
+    if (!filePathFromDb) {
+      filePathFromDb = getFolderFromMime(fileItem?.url?.mime);
+    }
+    const baseDir = path.join("/data/uploads/private", filePathFromDb);
 
     const filePath = path.join(baseDir, filename);
 
