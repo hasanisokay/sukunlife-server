@@ -372,7 +372,6 @@ router.get(
     try {
       const userId = req?.user?._id;
       const { courseId } = req.params;
-      console.log("from /user/course-progress/:courseId", { userId, courseId });
       if (!userId) {
         return res.status(401).json({ error: "User not authenticated" });
       }
@@ -428,33 +427,26 @@ router.get(
               status: item.status,
               order: item.order,
               title: item.title,
+              ...(item?.description && { description: item?.description }),
+              ...(item?.duration && { duration: item?.duration }),
+              ...(item?.url && { url: item?.url }),
 
-              // optional common fields
-              ...(item.description && { description: item.description }),
-              ...(item.duration && { duration: item.duration }),
-              ...(item.url && { url: item.url }),
-
-              // textInstruction
               ...(item.type === "textInstruction" && {
-                content: item.content,
+                content: item?.content,
               }),
-
-              // quiz
               ...(item.type === "quiz" && {
-                question: item.question,
-                options: item.options,
-                answer: item.answer,
+                question: item?.question,
+                options: item?.options,
+                answer: item?.answer,
               }),
-
-              // user progress (conditional + safe)
               ...(userProgress && {
                 isCompleted:
-                  userProgress.completedItems?.includes(item.itemId) || false,
+                  userProgress?.completedItems?.includes(item?.itemId) || false,
                 isViewed:
-                  userProgress.viewedItems?.includes(item.itemId) || false,
+                  userProgress.viewedItems?.includes(item?.itemId) || false,
                 videoProgress:
-                  userProgress.videoProgress?.[item.itemId] ?? null,
-                quizScore: userProgress.quizScores?.[item.itemId] ?? null,
+                  userProgress.videoProgress?.[item?.itemId] ?? null,
+                quizScore: userProgress?.quizScores?.[item?.itemId] ?? null,
               }),
             })),
           })),
@@ -1092,11 +1084,11 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
 
     // 📦 Headers
     res.setHeader("Content-Type", fileItem.mime || "application/octet-stream");
+res.setHeader(
+  "Content-Disposition",
+  `inline; filename="${filename}"`
+);
 
-    res.setHeader(
-      "Content-Disposition",
-      fileItem.inline ? "inline" : `attachment; filename="${filename}"`,
-    );
 
     res.setHeader("Cache-Control", "no-store");
 
