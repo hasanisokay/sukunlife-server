@@ -1,7 +1,6 @@
 import mime from "mime-types";
 
-export const getMimeTypeForHeader = (filename, storedMime = null) => {
-  if (storedMime) return storedMime;
+export const getMimeTypeForHeader = (filename) => {
 
   const detectedMime = mime.lookup(filename);
   if (detectedMime) return detectedMime;

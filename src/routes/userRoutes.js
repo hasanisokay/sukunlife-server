@@ -1089,7 +1089,7 @@ router.get("/course/file/:courseId/:filename", async (req, res) => {
 
     const mimeType = getMimeTypeForHeader(filename, fileItem?.url?.mime);
     const contentDisposition = getContentDisposition(filename, mimeType);
-
+console.log(`MimeType for item ${filename} is ${mimeType}`)
     res.setHeader("Content-Type", mimeType);
     res.setHeader("Content-Disposition", contentDisposition);
 
