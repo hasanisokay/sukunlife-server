@@ -606,7 +606,9 @@ router.get(
       const userId = req.user?._id;
 
       if (!userId) {
-        return res.status(401).json({ error: "Unauthorized" });
+        return res
+          .status(401)
+          .json({ error: "Unauthorized", success: false, enrolled: false });
       }
 
       const course = await courseCollection.findOne(
@@ -620,13 +622,11 @@ router.get(
       );
 
       if (!course) {
-        return res
-          .status(404)
-          .json({
-            success: false,
-            enrolled: false,
-            error: "Enrollment not found",
-          });
+        return res.status(404).json({
+          success: false,
+          enrolled: false,
+          error: "Enrollment not found",
+        });
       }
 
       // Fetch only the progress for this course
