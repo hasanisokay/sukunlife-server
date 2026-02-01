@@ -377,18 +377,18 @@ if (action === "QUIZ_SUBMIT") {
   }
 );
 
-
-// Also update the course-progress endpoint to include viewedItems
 router.get(
   "/course-progress/:courseId",
   strictUserOnlyMiddleware,
   async (req, res) => {
     try {
-      const userId = req?.user?._id;
+      const userId = req.user?._id;
       const { courseId } = req.params;
+
       if (!userId) {
         return res.status(401).json({ error: "User not authenticated" });
       }
+
       const course = await courseCollection.findOne({
         courseId,
         students: userId,
@@ -400,22 +400,31 @@ router.get(
 
       const user = await usersCollection.findOne(
         { _id: new ObjectId(userId) },
-        { projection: { [`courseProgress.${courseId}`]: 1 } },
+        { projection: { [`courseProgress.${courseId}`]: 1 } }
       );
 
       const userProgress = user?.courseProgress?.[courseId] || {
-        courseId: courseId,
-        completedItems: [],
-        completedModules: [],
-        viewedItems: [],
+        courseId,
+        viewed: [],
+        currentModule: null,
         currentItem: null,
+        currentItemProgress: 0,
         overallProgress: 0,
         startedOn: null,
         lastUpdated: null,
         completedOn: null,
         quizScores: {},
-        videoProgress: {},
       };
+
+      // helper maps
+      const viewedMap = {}; // moduleId -> { itemId -> progress }
+      for (const m of userProgress.viewed || []) {
+        viewedMap[m.moduleId] = {};
+        for (const i of m.items || []) {
+          viewedMap[m.moduleId][i.itemId] = i.progress;
+        }
+      }
+
       const enrichedProgress = {
         ...userProgress,
         course: {
@@ -423,47 +432,62 @@ router.get(
           totalModules: course.modules.length,
           totalItems: course.modules.reduce(
             (total, module) => total + module.items.length,
-            0,
+            0
           ),
-          modules: course?.modules?.map((module) => ({
-            moduleId: module?.moduleId,
-            title: module?.title,
-            moduleId: module?.moduleId,
-            order: module.order,
-            isCompleted: userProgress?.completedModules.includes(
-              module?.moduleId,
-            ),
-            isViewed: userProgress?.completedModules.includes(module?.moduleId),
-            items: module.items.map((item) => ({
-              // common fields
-              itemId: item.itemId,
-              type: item.type,
-              status: item.status,
-              order: item.order,
-              title: item.title,
-              ...(item?.description && { description: item?.description }),
-              ...(item?.duration && { duration: item?.duration }),
-              ...(item?.url && { url: item?.url }),
+          modules: course.modules.map((module) => {
+            const moduleViewedItems = viewedMap[module.moduleId] || {};
+            const moduleCompleted =
+              module.items.length > 0 &&
+              module.items.every(
+                (item) => (moduleViewedItems[item.itemId] || 0) >= 100
+              );
 
-              ...(item.type === "textInstruction" && {
-                content: item?.content,
+            return {
+              moduleId: module.moduleId,
+              title: module.title,
+              order: module.order,
+              isCompleted: moduleCompleted,
+              isViewed: Object.keys(moduleViewedItems).length > 0,
+
+              items: module.items.map((item) => {
+                const itemProgress =
+                  moduleViewedItems[item.itemId] ?? null;
+
+                const quizScore =
+                  userProgress.quizScores?.[module.moduleId]?.[item.itemId] ??
+                  null;
+
+                return {
+                  // base fields
+                  itemId: item.itemId,
+                  type: item.type,
+                  status: item.status,
+                  order: item.order,
+                  title: item.title,
+                  ...(item.description && { description: item.description }),
+                  ...(item.duration && { duration: item.duration }),
+                  ...(item.url && { url: item.url }),
+
+                  ...(item.type === "textInstruction" && {
+                    content: item.content,
+                  }),
+
+                  ...(item.type === "quiz" && {
+                    question: item.question,
+                    options: item.options,
+                    answer: item.answer,
+                  }),
+
+                  // progress fields
+                  isCompleted: itemProgress >= 100,
+                  isViewed: itemProgress !== null,
+                  videoProgress:
+                    item.type === "video" ? itemProgress : null,
+                  quizScore: quizScore,
+                };
               }),
-              ...(item.type === "quiz" && {
-                question: item?.question,
-                options: item?.options,
-                answer: item?.answer,
-              }),
-              ...(userProgress && {
-                isCompleted:
-                  userProgress?.completedItems?.includes(item?.itemId) || false,
-                isViewed:
-                  userProgress.viewedItems?.includes(item?.itemId) || false,
-                videoProgress:
-                  userProgress.videoProgress?.[item?.itemId] ?? null,
-                quizScore: userProgress?.quizScores?.[item?.itemId] ?? null,
-              }),
-            })),
-          })),
+            };
+          }),
         },
       };
 
@@ -478,8 +502,9 @@ router.get(
         details: error.message,
       });
     }
-  },
+  }
 );
+
 router.get("/all-progress", strictUserOnlyMiddleware, async (req, res) => {
   try {
     const userId = req.user._id;
