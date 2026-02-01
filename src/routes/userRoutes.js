@@ -215,7 +215,7 @@ router.put(
         const progressValue = Math.min(100, Math.max(0, data?.progress || 0));
 
         const moduleIndex = currentProgress.viewed.findIndex(
-          (m) => m.moduleId === moduleId
+          (m) => m.moduleId === moduleId,
         );
 
         if (moduleIndex === -1) {
@@ -224,10 +224,9 @@ router.put(
             items: [{ itemId, progress: progressValue }],
           });
         } else {
-          const itemIndex =
-            currentProgress.viewed[moduleIndex].items.findIndex(
-              (i) => i.itemId === itemId
-            );
+          const itemIndex = currentProgress.viewed[moduleIndex].items.findIndex(
+            (i) => i.itemId === itemId,
+          );
 
           if (itemIndex === -1) {
             currentProgress.viewed[moduleIndex].items.push({
@@ -250,7 +249,7 @@ router.put(
       // ---------- MARK COMPLETE ----------
       if (action === "MARK_COMPLETE") {
         const moduleIndex = currentProgress.viewed.findIndex(
-          (m) => m.moduleId === moduleId
+          (m) => m.moduleId === moduleId,
         );
 
         if (moduleIndex === -1) {
@@ -259,10 +258,9 @@ router.put(
             items: [{ itemId, progress: 100 }],
           });
         } else {
-          const itemIndex =
-            currentProgress.viewed[moduleIndex].items.findIndex(
-              (i) => i.itemId === itemId
-            );
+          const itemIndex = currentProgress.viewed[moduleIndex].items.findIndex(
+            (i) => i.itemId === itemId,
+          );
 
           if (itemIndex === -1) {
             currentProgress.viewed[moduleIndex].items.push({
@@ -277,49 +275,47 @@ router.put(
         currentProgress.currentItemProgress = 100;
       }
 
-   // ---------- QUIZ SUBMIT ----------
-if (action === "QUIZ_SUBMIT") {
+      // ---------- QUIZ SUBMIT ----------
+      if (action === "QUIZ_SUBMIT") {
+        // ensure module object exists
+        if (!currentProgress.quizScores[moduleId]) {
+          currentProgress.quizScores[moduleId] = {};
+        }
 
-  // ensure module object exists
-  if (!currentProgress.quizScores[moduleId]) {
-    currentProgress.quizScores[moduleId] = {};
-  }
+        currentProgress.quizScores[moduleId][itemId] = {
+          selected: data?.selected,
+          correct: data?.correct,
+          answeredOn: new Date(),
+        };
 
-  currentProgress.quizScores[moduleId][itemId] = {
-    selected: data?.selected,
-    correct: data?.correct,
-    answeredOn: new Date(),
-  };
+        // mark quiz as complete if correct
+        if (data?.correct) {
+          const moduleIndex = currentProgress.viewed.findIndex(
+            (m) => m.moduleId === moduleId,
+          );
 
-  // mark quiz as complete if correct
-  if (data?.correct) {
-    const moduleIndex = currentProgress.viewed.findIndex(
-      (m) => m.moduleId === moduleId
-    );
+          if (moduleIndex === -1) {
+            currentProgress.viewed.push({
+              moduleId,
+              items: [{ itemId, progress: 100 }],
+            });
+          } else {
+            const itemIndex = currentProgress.viewed[
+              moduleIndex
+            ].items.findIndex((i) => i.itemId === itemId);
 
-    if (moduleIndex === -1) {
-      currentProgress.viewed.push({
-        moduleId,
-        items: [{ itemId, progress: 100 }],
-      });
-    } else {
-      const itemIndex =
-        currentProgress.viewed[moduleIndex].items.findIndex(
-          (i) => i.itemId === itemId
-        );
-
-      if (itemIndex === -1) {
-        currentProgress.viewed[moduleIndex].items.push({
-          itemId,
-          progress: 100,
-        });
-      } else {
-        currentProgress.viewed[moduleIndex].items[itemIndex].progress = 100;
+            if (itemIndex === -1) {
+              currentProgress.viewed[moduleIndex].items.push({
+                itemId,
+                progress: 100,
+              });
+            } else {
+              currentProgress.viewed[moduleIndex].items[itemIndex].progress =
+                100;
+            }
+          }
+        }
       }
-    }
-  }
-}
-
 
       // ---------- SET CURRENT ITEM ----------
       currentProgress.currentModule = moduleId;
@@ -328,18 +324,16 @@ if (action === "QUIZ_SUBMIT") {
       // ---------- CALCULATE OVERALL PROGRESS ----------
       const totalItems = course.modules.reduce(
         (sum, m) => sum + m.items.length,
-        0
+        0,
       );
 
       const completedCount = currentProgress.viewed.reduce(
         (sum, m) => sum + m.items.filter((i) => i.progress >= 100).length,
-        0
+        0,
       );
 
       currentProgress.overallProgress =
-        totalItems > 0
-          ? Math.round((completedCount / totalItems) * 100)
-          : 0;
+        totalItems > 0 ? Math.round((completedCount / totalItems) * 100) : 0;
 
       // ---------- MARK COURSE COMPLETED ----------
       if (
@@ -359,7 +353,7 @@ if (action === "QUIZ_SUBMIT") {
             [progressPath]: currentProgress,
           },
         },
-        { upsert: true }
+        { upsert: true },
       );
 
       res.json({
@@ -374,7 +368,7 @@ if (action === "QUIZ_SUBMIT") {
         details: error.message,
       });
     }
-  }
+  },
 );
 
 router.get(
@@ -400,7 +394,7 @@ router.get(
 
       const user = await usersCollection.findOne(
         { _id: new ObjectId(userId) },
-        { projection: { [`courseProgress.${courseId}`]: 1 } }
+        { projection: { [`courseProgress.${courseId}`]: 1 } },
       );
 
       const userProgress = user?.courseProgress?.[courseId] || {
@@ -432,14 +426,14 @@ router.get(
           totalModules: course.modules.length,
           totalItems: course.modules.reduce(
             (total, module) => total + module.items.length,
-            0
+            0,
           ),
           modules: course.modules.map((module) => {
             const moduleViewedItems = viewedMap[module.moduleId] || {};
             const moduleCompleted =
               module.items.length > 0 &&
               module.items.every(
-                (item) => (moduleViewedItems[item.itemId] || 0) >= 100
+                (item) => (moduleViewedItems[item.itemId] || 0) >= 100,
               );
 
             return {
@@ -450,8 +444,7 @@ router.get(
               isViewed: Object.keys(moduleViewedItems).length > 0,
 
               items: module.items.map((item) => {
-                const itemProgress =
-                  moduleViewedItems[item.itemId] ?? null;
+                const itemProgress = moduleViewedItems[item.itemId] ?? null;
 
                 const quizScore =
                   userProgress.quizScores?.[module.moduleId]?.[item.itemId] ??
@@ -481,8 +474,7 @@ router.get(
                   // progress fields
                   isCompleted: itemProgress >= 100,
                   isViewed: itemProgress !== null,
-                  videoProgress:
-                    item.type === "video" ? itemProgress : null,
+                  videoProgress: item.type === "video" ? itemProgress : null,
                   quizScore: quizScore,
                 };
               }),
@@ -502,7 +494,7 @@ router.get(
         details: error.message,
       });
     }
-  }
+  },
 );
 
 router.get("/all-progress", strictUserOnlyMiddleware, async (req, res) => {
@@ -605,6 +597,55 @@ router.get("/user-orders", strictUserOnlyMiddleware, async (req, res) => {
       .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
+router.get(
+  "/check-if-enrolled/:courseId",
+  strictUserOnlyMiddleware,
+  async (req, res) => {
+    try {
+      const { courseId } = req.params;
+      const userId = req.user?._id;
+
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const course = await courseCollection.findOne(
+        {
+          courseId,
+          students: userId,
+        },
+        {
+          projection: { _id: 1 },
+        },
+      );
+
+      if (!course) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            enrolled: false,
+            error: "Enrollment not found",
+          });
+      }
+
+      // Fetch only the progress for this course
+      const user = await usersCollection.findOne(
+        { _id: new ObjectId(userId) },
+        { projection: { [`courseProgress.${courseId}`]: 1 } },
+      );
+
+      return res.status(200).json({
+        success: true,
+        enrolled: true,
+        progress: user?.courseProgress?.[courseId] ?? null,
+      });
+    } catch (error) {
+      console.error("check-if-enrolled error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  },
+);
 
 router.post(
   "/appointment-review",
