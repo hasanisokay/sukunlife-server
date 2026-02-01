@@ -162,175 +162,186 @@ router.get(
 );
 
 router.put(
-  "/update-progress/:courseId",
-  lowUserOnlyMiddleware,
+  "/update-progress/:courseId/:moduleId/:itemId",
+  strictUserOnlyMiddleware,
   async (req, res) => {
     try {
-      const userId = req.user._id;
-      const { courseId } = req.params;
-      const {
-        action, // 'mark-complete', 'update-video-time', 'quiz-result', 'set-current-item', 'mark-viewed'
-        itemId,
-        moduleId,
-        data, // additional data based on action
-      } = req.body;
+      const userId = req.user?._id;
+      const { courseId, moduleId, itemId } = req.params;
+      const { action, data } = req.body; // data.progress, data.selected, etc
 
-      if (!userId) {
-        return res.status(401).json({ error: "User not authenticated" });
+      if (!userId || !courseId || !moduleId || !itemId || !action) {
+        return res.status(400).json({ error: "Missing required fields" });
       }
 
-      // Validate course exists
-      const course = await courseCollection.findOne({ courseId });
+      const course = await courseCollection.findOne({
+        courseId,
+        students: userId,
+      });
 
       if (!course) {
         return res.status(404).json({ error: "Course not found" });
       }
 
-      // Get user's current progress
       const user = await usersCollection.findOne({
         _id: new ObjectId(userId),
       });
 
       const progressPath = `courseProgress.${courseId}`;
-      let currentProgress = user.courseProgress?.[courseId] || {
-        courseId: courseId,
-        completedItems: [],
-        completedModules: [],
-        viewedItems: [], // NEW: Track viewed items
-        currentItem: null,
-        overallProgress: 0,
-        lastUpdated: new Date(),
-        startedOn: new Date(),
-        quizScores: {},
-        videoProgress: {},
-      };
 
-      switch (action) {
-        case "mark-viewed":
-          if (!itemId) {
-            return res.status(400).json({ error: "itemId is required" });
-          }
+      // ---------- INIT PROGRESS IF NOT EXISTS ----------
+      let currentProgress = user?.courseProgress?.[courseId];
 
-          // Track last viewed item
-          currentProgress.lastViewedItem = itemId;
+      if (!currentProgress) {
+        const firstModule = course.modules[0];
+        const firstItem = firstModule?.items[0];
 
-          // Add to viewed items if not already
-          if (!currentProgress.viewedItems?.includes(itemId)) {
-            currentProgress.viewedItems = currentProgress.viewedItems || [];
-            currentProgress.viewedItems.push(itemId);
-          }
-
-          currentProgress.lastUpdated = new Date();
-          break;
-        case "mark-complete":
-          if (!itemId) {
-            return res.status(400).json({ error: "itemId is required" });
-          }
-
-          // Add item to completed items if not already
-          if (!currentProgress.completedItems.includes(itemId)) {
-            currentProgress.completedItems.push(itemId);
-          }
-
-          // Also mark as viewed if not already
-          if (!currentProgress.viewedItems.includes(itemId)) {
-            currentProgress.viewedItems.push(itemId);
-          }
-
-          // Check if all items in module are completed
-          const module = course.modules.find((m) => m.moduleId === moduleId);
-          if (module) {
-            const moduleItems = module.items.map((item) => item.itemId);
-            const allCompleted = moduleItems.every((itemId) =>
-              currentProgress.completedItems.includes(itemId),
-            );
-
-            if (
-              allCompleted &&
-              !currentProgress.completedModules.includes(moduleId)
-            ) {
-              currentProgress.completedModules.push(moduleId);
-            }
-          }
-          currentProgress.currentItem = itemId;
-          break;
-
-        case "update-video-time":
-          if (!itemId || !data) {
-            return res
-              .status(400)
-              .json({ error: "itemId and data are required" });
-          }
-
-          currentProgress.videoProgress[itemId] = {
-            ...currentProgress.videoProgress[itemId],
-            currentTime: data.currentTime,
-            duration: data.duration,
-            percentage: data.percentage,
-            lastWatched: new Date(),
-          };
-
-          // Mark as viewed when video progress is tracked
-          if (!currentProgress.viewedItems.includes(itemId)) {
-            currentProgress.viewedItems.push(itemId);
-          }
-          break;
-
-        case "quiz-result":
-          if (!itemId || !data) {
-            return res
-              .status(400)
-              .json({ error: "itemId and data are required" });
-          }
-
-          currentProgress.quizScores[itemId] = {
-            score: data.score,
-            maxScore: data.maxScore,
-            passed: data.passed,
-            attempts: (currentProgress.quizScores[itemId]?.attempts || 0) + 1,
-            lastAttempt: new Date(),
-          };
-
-          // Mark as viewed when quiz is attempted
-          if (!currentProgress.viewedItems.includes(itemId)) {
-            currentProgress.viewedItems.push(itemId);
-          }
-
-          // Mark as completed if passed
-          if (data.passed && !currentProgress.completedItems.includes(itemId)) {
-            currentProgress.completedItems.push(itemId);
-          }
-          break;
-
-        case "set-current-item":
-          if (!itemId) {
-            return res.status(400).json({ error: "itemId is required" });
-          }
-          currentProgress.currentItem = itemId;
-
-          // Also mark as viewed
-          if (!currentProgress.viewedItems.includes(itemId)) {
-            currentProgress.viewedItems.push(itemId);
-          }
-          break;
-
-        default:
-          return res.status(400).json({ error: "Invalid action" });
+        currentProgress = {
+          courseId,
+          viewed: [], // [{ moduleId, items: [{ itemId, progress }] }]
+          currentModule: firstModule?.moduleId || null,
+          currentItem: firstItem?.itemId || null,
+          currentItemProgress: 0,
+          overallProgress: 0,
+          startedOn: new Date(),
+          lastUpdated: new Date(),
+          completedOn: null,
+          quizScores: {}, // { itemId: { selected, correct, answeredOn } }
+        };
       }
 
-      // Calculate overall progress percentage
+      // ---------- ACTION HANDLING ----------
+      if (action === "VIDEO_PROGRESS") {
+        const progressValue = Math.min(100, Math.max(0, data?.progress || 0));
+
+        const moduleIndex = currentProgress.viewed.findIndex(
+          (m) => m.moduleId === moduleId
+        );
+
+        if (moduleIndex === -1) {
+          currentProgress.viewed.push({
+            moduleId,
+            items: [{ itemId, progress: progressValue }],
+          });
+        } else {
+          const itemIndex =
+            currentProgress.viewed[moduleIndex].items.findIndex(
+              (i) => i.itemId === itemId
+            );
+
+          if (itemIndex === -1) {
+            currentProgress.viewed[moduleIndex].items.push({
+              itemId,
+              progress: progressValue,
+            });
+          } else {
+            const oldProgress =
+              currentProgress.viewed[moduleIndex].items[itemIndex].progress ||
+              0;
+
+            currentProgress.viewed[moduleIndex].items[itemIndex].progress =
+              Math.max(oldProgress, progressValue); // forward only
+          }
+        }
+
+        currentProgress.currentItemProgress = progressValue;
+      }
+
+      // ---------- MARK COMPLETE ----------
+      if (action === "MARK_COMPLETE") {
+        const moduleIndex = currentProgress.viewed.findIndex(
+          (m) => m.moduleId === moduleId
+        );
+
+        if (moduleIndex === -1) {
+          currentProgress.viewed.push({
+            moduleId,
+            items: [{ itemId, progress: 100 }],
+          });
+        } else {
+          const itemIndex =
+            currentProgress.viewed[moduleIndex].items.findIndex(
+              (i) => i.itemId === itemId
+            );
+
+          if (itemIndex === -1) {
+            currentProgress.viewed[moduleIndex].items.push({
+              itemId,
+              progress: 100,
+            });
+          } else {
+            currentProgress.viewed[moduleIndex].items[itemIndex].progress = 100;
+          }
+        }
+
+        currentProgress.currentItemProgress = 100;
+      }
+
+   // ---------- QUIZ SUBMIT ----------
+if (action === "QUIZ_SUBMIT") {
+
+  // ensure module object exists
+  if (!currentProgress.quizScores[moduleId]) {
+    currentProgress.quizScores[moduleId] = {};
+  }
+
+  currentProgress.quizScores[moduleId][itemId] = {
+    selected: data?.selected,
+    correct: data?.correct,
+    answeredOn: new Date(),
+  };
+
+  // mark quiz as complete if correct
+  if (data?.correct) {
+    const moduleIndex = currentProgress.viewed.findIndex(
+      (m) => m.moduleId === moduleId
+    );
+
+    if (moduleIndex === -1) {
+      currentProgress.viewed.push({
+        moduleId,
+        items: [{ itemId, progress: 100 }],
+      });
+    } else {
+      const itemIndex =
+        currentProgress.viewed[moduleIndex].items.findIndex(
+          (i) => i.itemId === itemId
+        );
+
+      if (itemIndex === -1) {
+        currentProgress.viewed[moduleIndex].items.push({
+          itemId,
+          progress: 100,
+        });
+      } else {
+        currentProgress.viewed[moduleIndex].items[itemIndex].progress = 100;
+      }
+    }
+  }
+}
+
+
+      // ---------- SET CURRENT ITEM ----------
+      currentProgress.currentModule = moduleId;
+      currentProgress.currentItem = itemId;
+
+      // ---------- CALCULATE OVERALL PROGRESS ----------
       const totalItems = course.modules.reduce(
-        (total, module) => total + module.items.length,
-        0,
+        (sum, m) => sum + m.items.length,
+        0
       );
+
+      const completedCount = currentProgress.viewed.reduce(
+        (sum, m) => sum + m.items.filter((i) => i.progress >= 100).length,
+        0
+      );
+
       currentProgress.overallProgress =
         totalItems > 0
-          ? Math.round(
-              (currentProgress.completedItems.length / totalItems) * 100,
-            )
+          ? Math.round((completedCount / totalItems) * 100)
           : 0;
 
-      // Check if course is completed
+      // ---------- MARK COURSE COMPLETED ----------
       if (
         currentProgress.overallProgress === 100 &&
         !currentProgress.completedOn
@@ -340,7 +351,7 @@ router.put(
 
       currentProgress.lastUpdated = new Date();
 
-      // Update user document
+      // ---------- SAVE ----------
       const updateResult = await usersCollection.updateOne(
         { _id: new ObjectId(userId) },
         {
@@ -348,14 +359,13 @@ router.put(
             [progressPath]: currentProgress,
           },
         },
-        { upsert: true },
+        { upsert: true }
       );
 
       res.json({
         success: true,
         message: "Progress updated successfully",
         progress: currentProgress,
-        updateResult,
       });
     } catch (error) {
       console.error("Error updating progress:", error);
@@ -364,8 +374,9 @@ router.put(
         details: error.message,
       });
     }
-  },
+  }
 );
+
 
 // Also update the course-progress endpoint to include viewedItems
 router.get(
@@ -733,14 +744,15 @@ router.post(
 
 router.get(
   "/course/stream-url/:courseId/:videoId",
-  // strictUserOnlyMiddleware,
+  strictUserOnlyMiddleware,
   async (req, res) => {
-    // todo:uncomment middleware and userId
     const { courseId, videoId } = req.params;
-    // const userId = req.user._id.toString();
-    const userId = req?.user?._id?.toString() || "69784bb7843705c35aa436e9";
-    // testing currently. no auth needed
-    const course = await courseCollection.findOne({ courseId });
+    const userId = req?.user?._id?.toString();
+    const course = await courseCollection.findOne({
+      courseId,
+      students: req?.user?._id,
+    });
+
     if (!course) return res.status(404).json({ error: "Course not found" });
 
     let videoItem = null;
@@ -769,54 +781,6 @@ router.get(
     res.json({
       url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/master.m3u8?token=${token}`,
     });
-  },
-);
-
-router.get(
-  "/modules/:courseId/:moduleId",
-  strictUserOnlyMiddleware,
-  async (req, res) => {
-    try {
-      const { courseId, moduleId } = req.params;
-
-      const course = await courseCollection.findOne(
-        { courseId },
-        {
-          projection: {
-            title: 1,
-            courseId: 1,
-            modules: 1,
-          },
-        },
-      );
-
-      if (!course) {
-        return res.status(404).json({
-          message: "No course found",
-          status: 404,
-        });
-      }
-
-      // Try to find the requested module
-      const matchedModule = course.modules?.find(
-        (m) => m.moduleId === moduleId,
-      );
-
-      return res.status(200).json({
-        message: "Course Found",
-        status: 200,
-        course: {
-          ...course,
-          modules: matchedModule ? [matchedModule] : course.modules,
-        },
-      });
-    } catch (error) {
-      return res.status(500).json({
-        message: "Server error",
-        status: 500,
-        error: error.message,
-      });
-    }
   },
 );
 
@@ -974,14 +938,14 @@ router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
 
   res.json({ ok: true });
 });
-
+// getting course file token
 router.post(
   "/course/file/token",
   strictUserOnlyMiddleware,
   async (req, res) => {
     try {
       const { courseId, filename } = req.body;
-      const userId = req.user.id;
+      const userId = req?.user?._id?.toString();
       const course = await courseCollection.findOne({
         courseId,
         students: req?.user?._id,
