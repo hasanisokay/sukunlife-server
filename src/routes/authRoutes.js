@@ -370,7 +370,7 @@ const deletedSession = await sessionsCollection.findOneAndDelete({
   sessionId,
   userId,
 });
-
+console.log(deletedSession)
 if (!deletedSession.value) {
 
 
