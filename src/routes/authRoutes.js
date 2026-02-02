@@ -87,7 +87,7 @@ router.post("/login", async (req, res) => {
       secure: isProduction,
       sameSite: isProduction ? "none" : "lax",
       domain: isProduction ? ".sukunlife.com" : "localhost",
-      maxAge: 2 * 60 * 60 * 1000,
+      maxAge: ACCESS_COOKIE_MAX_AGE,
       path: "/",
     });
 
@@ -96,7 +96,7 @@ router.post("/login", async (req, res) => {
       secure: isProduction,
       sameSite: isProduction ? "none" : "lax",
       domain: isProduction ? ".sukunlife.com" : "localhost",
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      maxAge: REFRESH_COOKIE_MAX_AGE,
       path: "/",
     });
 
@@ -392,25 +392,6 @@ router.post("/refresh", async (req, res) => {
         .json({ message: "Refresh token reuse detected", status: 403 });
     }
 
-    // const isValidSessionId = await sessionsCollection.findOne({
-    //   sessionId,
-    //   userId: new ObjectId(decoded?.userId),
-    // });
-
-    // if (!isValidSessionId) {
-    //   res.clearCookie("rfr_token", {
-    //     httpOnly: true,
-    //     secure: isProduction,
-    //     sameSite: isProduction ? "none" : "lax",
-    //     domain: isProduction ? ".sukunlife.com" : "localhost",
-    //     path: "/",
-    //   });
-
-    //   return res
-    //     .status(403)
-    //     .json({ message: "SessionId closed. Login to continue.", status: 403 });
-    // }
-
     const user = await usersCollection.findOne({
       _id: userId,
     });
@@ -462,12 +443,12 @@ router.post("/refresh", async (req, res) => {
       accessTokenPayload,
       ACCESS_TOKEN_SECRET_KEY,
       {
-        expiresIn: "15m",
+        expiresIn: ACCESS_EXPIRATION,
       },
     );
 
     const newRefreshToken = jwt.sign(refreshTokenPayload, REFRESH_SECRET_KEY, {
-      expiresIn: "30d",
+      expiresIn: REFRESH_EXPIRATION,
     });
 
     res.cookie("rfr_token", newRefreshToken, {
@@ -475,7 +456,7 @@ router.post("/refresh", async (req, res) => {
       secure: isProduction,
       sameSite: isProduction ? "none" : "lax",
       domain: isProduction ? ".sukunlife.com" : "localhost",
-      maxAge: 30 * 24 * 60 * 60 * 1000,
+      maxAge: REFRESH_COOKIE_MAX_AGE,
       path: "/",
     });
 
@@ -484,7 +465,7 @@ router.post("/refresh", async (req, res) => {
       secure: isProduction,
       sameSite: isProduction ? "none" : "lax",
       domain: isProduction ? ".sukunlife.com" : "localhost",
-      maxAge: 2 * 60 * 60 * 1000,
+      maxAge: ACCESS_COOKIE_MAX_AGE,
       path: "/",
     });
 
