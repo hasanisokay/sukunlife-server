@@ -366,23 +366,12 @@ router.post("/refresh", async (req, res) => {
     const sessionId = decoded.sessionId;
     const userId = new ObjectId(decoded.userId);
 
-const deletedSession = await sessionsCollection.findOneAndDelete({
-  sessionId,
-  userId,
-});
-console.log(deletedSession)
-if (!deletedSession.value) {
-
-
-  res.clearCookie("rfr_token", {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? "none" : "lax",
-    domain: isProduction ? ".sukunlife.com" : "localhost",
-    path: "/",
-  });
-
-    res.clearCookie("acs_token", {
+    const deletedSession = await sessionsCollection.findOneAndDelete({
+      sessionId,
+      userId,
+    });
+    if (!deletedSession) {
+      res.clearCookie("rfr_token", {
         httpOnly: true,
         secure: isProduction,
         sameSite: isProduction ? "none" : "lax",
@@ -390,10 +379,18 @@ if (!deletedSession.value) {
         path: "/",
       });
 
-  return res
-    .status(403)
-    .json({ message: "Refresh token reuse detected", status: 403 });
-}
+      res.clearCookie("acs_token", {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
+        domain: isProduction ? ".sukunlife.com" : "localhost",
+        path: "/",
+      });
+
+      return res
+        .status(403)
+        .json({ message: "Refresh token reuse detected", status: 403 });
+    }
 
     // const isValidSessionId = await sessionsCollection.findOne({
     //   sessionId,
