@@ -1615,7 +1615,6 @@ router.get("/course/video-status/:videoId", async (req, res) => {
   });
 });
 
-// Helper function (same as in addJob.js)
 function formatTime(sec) {
   if (!sec || sec < 0 || !isFinite(sec)) return "calculating...";
 

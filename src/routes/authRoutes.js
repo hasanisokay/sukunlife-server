@@ -58,7 +58,13 @@ router.post("/login", async (req, res) => {
       userId: user._id,
       createdAt: new Date(),
     });
-    const { password: _, cart, enrolledCourses, ...userForPayload } = user;
+    const {
+      password: _,
+      cart,
+      courseProgress,
+      enrolledCourses,
+      ...userForPayload
+    } = user;
     const accessTokenPayload = {
       user: userForPayload,
     };
@@ -168,7 +174,6 @@ router.post("/logout", async (req, res) => {
     });
   }
 });
-
 
 // Signup
 router.post("/signup", async (req, res) => {
@@ -338,13 +343,6 @@ router.post("/refresh", async (req, res) => {
     const isProduction = process.env.NODE_ENV === "production";
     const cookies = cookie.parse(req.headers?.cookie || "");
     const rfrToken = cookies?.rfr_token;
-    // const accessToken = cookies.acs_token;
-    // if (accessToken) {
-    //   return res.status(200).json({
-    //     message: "Access token is valid. No need to refresh.",
-    //     status: "success",
-    //   });
-    // }
 
     const refreshToken = rfrToken || req.body.refreshToken;
     if (!refreshToken) {
@@ -361,64 +359,144 @@ router.post("/refresh", async (req, res) => {
         .status(403)
         .json({ message: "Invalid or expired refresh token", status: 403 });
     }
+    if (!ObjectId.isValid(decoded?.userId)) {
+      return res.status(403).json({ message: "Invalid token", status: 403 });
+    }
+
     const sessionId = decoded.sessionId;
-    const isValidSessionId = await sessionsCollection.findOne({ sessionId });
-    if (!isValidSessionId) {
-      res.clearCookie(REFRESH_COOKIE_NAME, {
+    const userId = new ObjectId(decoded.userId);
+
+const deletedSession = await sessionsCollection.findOneAndDelete({
+  sessionId,
+  userId,
+});
+
+if (!deletedSession.value) {
+
+
+  res.clearCookie("rfr_token", {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    domain: isProduction ? ".sukunlife.com" : "localhost",
+    path: "/",
+  });
+
+    res.clearCookie("acs_token", {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "none",
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
+        domain: isProduction ? ".sukunlife.com" : "localhost",
+        path: "/",
       });
 
-      return res
-        .status(403)
-        .json({ message: "SessionId closed. Login to continue.", status: 403 });
-    }
-    // Find the user associated with the refresh token
+  return res
+    .status(403)
+    .json({ message: "Refresh token reuse detected", status: 403 });
+}
+
+    // const isValidSessionId = await sessionsCollection.findOne({
+    //   sessionId,
+    //   userId: new ObjectId(decoded?.userId),
+    // });
+
+    // if (!isValidSessionId) {
+    //   res.clearCookie("rfr_token", {
+    //     httpOnly: true,
+    //     secure: isProduction,
+    //     sameSite: isProduction ? "none" : "lax",
+    //     domain: isProduction ? ".sukunlife.com" : "localhost",
+    //     path: "/",
+    //   });
+
+    //   return res
+    //     .status(403)
+    //     .json({ message: "SessionId closed. Login to continue.", status: 403 });
+    // }
+
     const user = await usersCollection.findOne({
-      _id: new ObjectId(decoded?.userId),
+      _id: userId,
     });
     if (!user) {
       return res.status(404).json({ message: "User not found", status: 404 });
     }
     if (user?.status === "blocked") {
-      res.clearCookie(REFRESH_COOKIE_NAME, {
+      res.clearCookie("rfr_token", {
         httpOnly: true,
         secure: isProduction,
-        sameSite: isProduction ? "None" : "Lax",
+        sameSite: isProduction ? "none" : "lax",
+        domain: isProduction ? ".sukunlife.com" : "localhost",
+        path: "/",
       });
-      res.clearCookie(ACCESS_COOKIE_NAME, {
+
+      res.clearCookie("acs_token", {
         httpOnly: true,
         secure: isProduction,
-        sameSite: isProduction ? "None" : "Lax",
+        sameSite: isProduction ? "none" : "lax",
+        domain: isProduction ? ".sukunlife.com" : "localhost",
+        path: "/",
       });
 
       return res
         .status(403)
         .json({ message: "Blocked by admin. Contact Support.", status: 403 });
     }
+    const { password, ...userWithoutPassword } = user;
+    const { cart, enrolledCourses, courseProgress, ...userForPayload } =
+      userWithoutPassword;
 
-    const { password: _, cart, enrolledCourses, ...userForPayload } = user;
+    const newSessionId = uuidv4();
+
     const accessTokenPayload = {
       user: userForPayload,
     };
+    const refreshTokenPayload = {
+      userId: user._id,
+      sessionId: newSessionId,
+    };
+
+    await sessionsCollection.insertOne({
+      sessionId: newSessionId,
+      userId: user._id,
+      createdAt: new Date(),
+    });
 
     const newAccessToken = jwt.sign(
       accessTokenPayload,
       ACCESS_TOKEN_SECRET_KEY,
       {
-        expiresIn: ACCESS_EXPIRATION,
+        expiresIn: "15m",
       },
     );
 
-    // Update cookies for web clients
+    const newRefreshToken = jwt.sign(refreshTokenPayload, REFRESH_SECRET_KEY, {
+      expiresIn: "30d",
+    });
+
+    res.cookie("rfr_token", newRefreshToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      domain: isProduction ? ".sukunlife.com" : "localhost",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+
+    res.cookie("acs_token", newAccessToken, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      domain: isProduction ? ".sukunlife.com" : "localhost",
+      maxAge: 2 * 60 * 60 * 1000,
+      path: "/",
+    });
 
     // Return the new tokens for mobile clients
     return res.status(200).json({
       accessToken: newAccessToken,
       message: "Token refreshed successfully",
       status: 200,
-      user,
+      user: userWithoutPassword,
     });
   } catch (error) {
     console.error(error);
