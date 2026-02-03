@@ -1,7 +1,7 @@
 import crypto from "crypto";
 
 const SECRET = process.env.HLS_SECRET || "super-secret-key";
-const EXPIRY_SECONDS = 60 * 10; // 10 minutes
+const EXPIRY_SECONDS = 60 * 30; // 30 minutes
 
 export function createHLSToken(userId, courseId, videoId) {
   const exp = Math.floor(Date.now() / 1000) + EXPIRY_SECONDS;

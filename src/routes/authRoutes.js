@@ -120,7 +120,6 @@ router.post("/logout", async (req, res) => {
   const isProduction = process.env.NODE_ENV === "production";
 
   try {
-    // Always clear cookies first (logout should be idempotent)
     res.clearCookie("acs_token", {
       httpOnly: true,
       secure: isProduction,
