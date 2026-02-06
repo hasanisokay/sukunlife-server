@@ -478,28 +478,26 @@ router.get("/all-blog-tags", async (req, res) => {
 
 router.post("/book-appointment", async (req, res) => {
   try {
-    const bookingData = req.body;
-    const modifiedBookingData = bookingData;
+
+        const bookingData = req.body;
+
+    const trimmedBookingData = {};
+    for (const key in bookingData) {
+      trimmedBookingData[key] =
+        typeof bookingData[key] === "string"
+          ? bookingData[key].trim()
+          : bookingData[key];
+    }
+
+    const modifiedBookingData = trimmedBookingData;
     modifiedBookingData.bookedDate = convertDateToDateObject(bookingData.date);
     modifiedBookingData.bookingDate = new Date();
 
     const result = await appointmentCollection.insertOne(modifiedBookingData);
-    // if (result?.insertedId) {
-    //   await Promise.all([
-    //     sendAdminBookingConfirmationEmail(bookingData, transporter),
-    //     sendUserBookingConfirmationEmail(bookingData, transporter),
-    //   ]);
-
-    //   return res.status(200).json({
-    //     message: "Booked successfully.",
-    //     result,
-    //     status: 200,
-    //   });
-    // }
     if (result?.insertedId) {
       Promise.all([
-        sendAdminBookingConfirmationEmail(bookingData, transporter),
-        sendUserBookingConfirmationEmail(bookingData, transporter),
+        sendAdminBookingConfirmationEmail(trimmedBookingData, transporter),
+        sendUserBookingConfirmationEmail(trimmedBookingData, transporter),
       ]).catch((err) => {
         console.error("Email error:", err);
       });
