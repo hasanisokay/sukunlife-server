@@ -266,9 +266,8 @@ router.post(
   "/add-appointment-dates",
   strictAdminMiddleware,
   async (req, res) => {
+    const { appointments } = req.body;
     try {
-      const { appointments } = req.body;
-
       if (!appointments || !Array.isArray(appointments) || appointments.length === 0) {
         return res.status(400).json({
           message: "Invalid data. 'appointments' array is required.",
