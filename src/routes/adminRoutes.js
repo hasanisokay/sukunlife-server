@@ -1759,15 +1759,14 @@ router.get("/payments", strictAdminMiddleware, async (req, res) => {
       sort = "newest",
       status,
       source,
-      dateFrom,
-      dateTo,
+      startDate,
+      endDate,
       includeRaw = "false",
     } = req.query;
 
     const parsedLimit = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
     const parsedPage = Math.max(parseInt(page) || 1, 1);
     const skip = (parsedPage - 1) * parsedLimit;
-
     const matchStage = {};
 
     /* -------------------------
@@ -1798,15 +1797,15 @@ router.get("/payments", strictAdminMiddleware, async (req, res) => {
     /* -------------------------
        Date Range (Fixed)
     -------------------------- */
-    if (dateFrom || dateTo) {
+    if (startDate || endDate) {
       matchStage.createdAt = {};
 
-      if (dateFrom) {
-        matchStage.createdAt.$gte = new Date(dateFrom);
+      if (startDate) {
+        matchStage.createdAt.$gte = new Date(startDate);
       }
 
-      if (dateTo) {
-        const end = new Date(dateTo);
+      if (endDate) {
+        const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
         matchStage.createdAt.$lte = end;
       }
