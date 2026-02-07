@@ -16,6 +16,7 @@ import {
 
 const router = express.Router();
 const db = await dbConnect();
+const paymentCollection = db?.collection("payments");
 const blogsCollection = db?.collection("blogs");
 const usersCollection = db?.collection("users");
 const scheduleCollection = db?.collection("schedules");
@@ -890,6 +891,7 @@ router.put("/approve-order/:id", strictAdminMiddleware, async (req, res) => {
 router.get("/dashboard", strictAdminMiddleware, async (req, res) => {
   try {
     const blogCount = await blogsCollection.countDocuments();
+    const noteCount = await noteCollection.countDocuments();
     const userCount = await usersCollection.countDocuments({ role: "user" });
     const adminCount = await usersCollection.countDocuments({ role: "admin" });
     const shopProductCount = await shopCollection.countDocuments();
@@ -901,16 +903,29 @@ router.get("/dashboard", strictAdminMiddleware, async (req, res) => {
       await appointmentCollection.countDocuments({
         bookedDate: { $gt: new Date() },
       });
+    const now = new Date();
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(now.getDate() - 7);
+
+    const sevenDaysOrderCount = await orderCollection.countDocuments({
+      orderedAt: {
+        $gte: sevenDaysAgo,
+        $lte: now,
+      },
+    });
+
     const coursesCount = await courseCollection.countDocuments();
     return res.status(200).json({
       data: {
         blogCount,
         userCount,
+        noteCount,
         adminCount,
         shopProductCount,
         pendingOrdersCount,
         upcomingAppointmentsCount,
         coursesCount,
+        sevenDaysOrderCount,
       },
       message: "Data Found",
       status: 200,
@@ -1732,5 +1747,7 @@ ${hlsKeyArgs} \
     });
   },
 );
+
+// get payments data
 
 export default router;
