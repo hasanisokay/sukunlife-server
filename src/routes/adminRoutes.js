@@ -275,21 +275,7 @@ router.post(
           status: 400,
         });
       }
-await scheduleCollection.createIndex(
-  { dateObject: 1 },
-  {
-expireAfterSeconds: 86400, 
-    name: "ttl_index"
-  }
-);
 
-    await scheduleCollection.createIndex(
-      { date: 1, startTime: 1, endTime: 1 },
-      { 
-        unique: true,
-        name: "unique_slot_index"
-      }
-    );
       const now = new Date();
       const appointmentsToInsert = appointments?.map(apt => ({
         date: apt?.date,
