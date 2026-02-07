@@ -165,6 +165,7 @@ router.get("/blogs", lowAdminMiddleware, async (req, res) => {
       .json({ message: "Server error", error: error.message, status: 500 });
   }
 });
+
 router.delete("/blog/:id", strictAdminMiddleware, async (req, res) => {
   try {
     const blogId = req.params.id;
@@ -266,28 +267,86 @@ router.post(
   strictAdminMiddleware,
   async (req, res) => {
     try {
-      const data = req.body;
+      const { appointments } = req.body;
 
-      const result = await scheduleCollection.insertMany(data);
-      const insertedIds = Object.values(result.insertedIds); // Extract the inserted ObjectIds
+      if (!appointments || !Array.isArray(appointments) || appointments.length === 0) {
+        return res.status(400).json({
+          message: "Invalid data. 'appointments' array is required.",
+          status: 400,
+        });
+      }
+await scheduleCollection.createIndex(
+  { dateObject: 1 },
+  {
+expireAfterSeconds: 86400, 
+    name: "ttl_index"
+  }
+);
+
+    await scheduleCollection.createIndex(
+      { date: 1, startTime: 1, endTime: 1 },
+      { 
+        unique: true,
+        name: "unique_slot_index"
+      }
+    );
+      const now = new Date();
+      const appointmentsToInsert = appointments?.map(apt => ({
+        date: apt?.date,
+        startTime: apt?.startTime,
+        endTime: apt?.endTime,
+        consultants: apt?.consultants,
+        createdAt: now,
+        dateObject: new Date(apt?.date),
+      }));
+
+      // ordered: false to continue inserting even if some fail due to duplicates
+      const result = await scheduleCollection.insertMany(
+        appointmentsToInsert,
+        { ordered: false }
+      );
+
+      const insertedIds = Object.values(result.insertedIds);
       const insertedDocs = await scheduleCollection
         .find({ _id: { $in: insertedIds } })
         .toArray();
 
       return res.status(200).json({
-        message: "Appointment dates added successfully.",
+        message: "Appointment dates processed successfully.",
         status: 200,
-        dates: insertedDocs, // Return the newly added documents
+        summary: {
+          total: appointments.length,
+          inserted: insertedDocs.length,
+          skipped: appointments.length - insertedDocs.length,
+        },
+        dates: insertedDocs,
       });
     } catch (error) {
-      console.error(error);
+      // Handle duplicate key errors gracefully
+      if (error.code === 11000) {
+        // Some documents were inserted, some were duplicates
+        const insertedCount = error.result?.nInserted || 0;
+        
+        return res.status(200).json({
+          message: "Appointment dates processed with some duplicates skipped.",
+          status: 200,
+          summary: {
+            total: appointments.length,
+            inserted: insertedCount,
+            skipped: appointments.length - insertedCount,
+          },
+          warning: "Some appointments were skipped due to duplicates.",
+        });
+      }
+
+      console.error("Error adding appointment dates:", error);
       return res.status(500).json({
         message: "Server error",
         error: error.message,
         status: 500,
       });
     }
-  },
+  }
 );
 
 router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
