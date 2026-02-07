@@ -1749,5 +1749,127 @@ ${hlsKeyArgs} \
 );
 
 // get payments data
+router.get("/payments", strictAdminMiddleware, async (req, res) => {
+  try {
+    const {
+      limit = "20",
+      page = "1",
+      fulfilled,
+      keyword,
+      sort = "newest",
+      status,
+      source,
+      dateFrom,
+      dateTo,
+      includeRaw = "false",
+    } = req.query;
+
+    const parsedLimit = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
+    const parsedPage = Math.max(parseInt(page) || 1, 1);
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    const matchStage = {};
+
+    /* -------------------------
+       Keyword Search
+    -------------------------- */
+    if (keyword?.trim()) {
+      matchStage.$or = [
+        { invoice: { $regex: keyword, $options: "i" } },
+        { trx_id: { $regex: keyword, $options: "i" } },
+        { "customer.name": { $regex: keyword, $options: "i" } },
+        { "customer.email": { $regex: keyword, $options: "i" } },
+        { "customer.mobile": { $regex: keyword, $options: "i" } },
+      ];
+    }
+
+    /* -------------------------
+       Boolean Handling
+    -------------------------- */
+    if (fulfilled === "true") matchStage.fulfilled = true;
+    if (fulfilled === "false") matchStage.fulfilled = false;
+
+    /* -------------------------
+       Status & Source
+    -------------------------- */
+    if (status) matchStage.status = status;
+    if (source) matchStage.source = source;
+
+    /* -------------------------
+       Date Range (Fixed)
+    -------------------------- */
+    if (dateFrom || dateTo) {
+      matchStage.createdAt = {};
+
+      if (dateFrom) {
+        matchStage.createdAt.$gte = new Date(dateFrom);
+      }
+
+      if (dateTo) {
+        const end = new Date(dateTo);
+        end.setHours(23, 59, 59, 999);
+        matchStage.createdAt.$lte = end;
+      }
+    }
+
+    const sortOrder = sort === "oldest" ? 1 : -1;
+    const projection = includeRaw === "true" ? {} : { raw_response: 0 };
+
+    /* -------------------------
+       Query
+    -------------------------- */
+    const payments = await paymentCollection
+      .find(matchStage)
+      .project(projection)
+      .sort({ createdAt: sortOrder })
+      .skip(skip)
+      .limit(parsedLimit)
+      .toArray();
+
+    const totalCount = await paymentCollection.countDocuments(matchStage);
+
+    /* -------------------------
+       Stats
+    -------------------------- */
+    const revenueAgg = await paymentCollection.aggregate([
+      { $match: { ...matchStage, status: "paid" } },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$amount" },
+          totalPaid: { $sum: 1 },
+        },
+      },
+    ]).toArray();
+
+    const totalRevenue = revenueAgg[0]?.totalRevenue || 0;
+    const totalPaid = revenueAgg[0]?.totalPaid || 0;
+
+    return res.status(200).json({
+      status: 200,
+      message: "Payments fetched successfully",
+      data: {
+        payments,
+        pagination: {
+          total: totalCount,
+          page: parsedPage,
+          limit: parsedLimit,
+          totalPages: Math.ceil(totalCount / parsedLimit),
+        },
+        stats: {
+          totalRevenue,
+          totalPaid,
+        },
+      },
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      status: 500,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+});
 
 export default router;
