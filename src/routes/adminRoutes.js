@@ -262,6 +262,10 @@ router.get("/users", lowAdminMiddleware, async (req, res) => {
   }
 });
 
+// ============================================
+// Add appointment slots
+// ============================================
+
 router.post(
   "/add-appointment-dates",
   strictAdminMiddleware,
@@ -334,40 +338,550 @@ router.post(
   }
 );
 
-router.delete("/schedules", strictAdminMiddleware, async (req, res) => {
-  try {
-    const { dateIds, times } = req.body;
+// ============================================
+// Edit single appointment slot
+// ============================================
 
-    if (!Array.isArray(dateIds) || !Array.isArray(times)) {
-      return res
-        .status(400)
-        .json({ status: 400, message: "Invalid request data." });
+router.put(
+  "/appointment-slot/:id",
+  strictAdminMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { date, startTime, endTime, consultants } = req.body;
+
+      // Validate ID
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({
+          message: "Invalid slot ID",
+          status: 400
+        });
+      }
+
+      // Check if slot exists
+      const existingSlot = await scheduleCollection.findOne({
+        _id: new ObjectId(id)
+      });
+
+      if (!existingSlot) {
+        return res.status(404).json({
+          message: "Appointment slot not found",
+          status: 404
+        });
+      }
+
+      // Build update object
+      const updateData = {};
+      if (date) {
+        updateData.date = date;
+        updateData.dateObject = new Date(date);
+      }
+      if (startTime) updateData.startTime = startTime;
+      if (endTime) updateData.endTime = endTime;
+      if (consultants && Array.isArray(consultants)) {
+        updateData.consultants = consultants;
+      }
+
+      // Check for duplicates if date/time is being changed
+      if (date || startTime || endTime) {
+        const checkDate = date || existingSlot.date;
+        const checkStartTime = startTime || existingSlot.startTime;
+        const checkEndTime = endTime || existingSlot.endTime;
+
+        const duplicate = await scheduleCollection.findOne({
+          _id: { $ne: new ObjectId(id) },
+          date: checkDate,
+          startTime: checkStartTime,
+          endTime: checkEndTime
+        });
+
+        if (duplicate) {
+          return res.status(409).json({
+            message: "A slot with this date and time already exists",
+            status: 409
+          });
+        }
+      }
+
+      // Update the slot
+      const result = await scheduleCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateData }
+      );
+
+      if (result.modifiedCount === 0) {
+        return res.status(400).json({
+          message: "No changes made to the slot",
+          status: 400
+        });
+      }
+
+      // Fetch updated slot
+      const updatedSlot = await scheduleCollection.findOne({
+        _id: new ObjectId(id)
+      });
+
+      return res.status(200).json({
+        message: "Appointment slot updated successfully",
+        status: 200,
+        slot: updatedSlot
+      });
+    } catch (error) {
+      console.error("Error updating appointment slot:", error);
+      return res.status(500).json({
+        message: "Server error",
+        error: error.message,
+        status: 500
+      });
     }
-    const objectIds = dateIds.map((id) => new ObjectId(id));
-
-    // Remove selected times from the dates
-    await scheduleCollection.updateMany(
-      { _id: { $in: objectIds } },
-      { $pull: { times: { $in: times } } },
-    );
-
-    // Delete dates that have no times left
-    await scheduleCollection.deleteMany({
-      _id: { $in: objectIds },
-      times: { $size: 0 },
-    });
-
-    return res.json({
-      status: 200,
-      message: "Selected dates and times deleted successfully.",
-    });
-  } catch (error) {
-    console.error("Error deleting schedules:", error);
-    return res
-      .status(500)
-      .json({ status: 500, message: "Internal Server Error." });
   }
-});
+);
+
+// ============================================
+// Delete single appointment slot
+// ============================================
+
+router.delete(
+  "/appointment-slot/:id",
+  strictAdminMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Validate ID
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({
+          message: "Invalid slot ID",
+          status: 400
+        });
+      }
+
+      // Check if slot exists
+      const slot = await scheduleCollection.findOne({
+        _id: new ObjectId(id)
+      });
+
+      if (!slot) {
+        return res.status(404).json({
+          message: "Appointment slot not found",
+          status: 404
+        });
+      }
+
+      // Delete the slot
+      const result = await scheduleCollection.deleteOne({
+        _id: new ObjectId(id)
+      });
+
+      return res.status(200).json({
+        message: "Appointment slot deleted successfully",
+        status: 200,
+        deletedSlot: {
+          id: id,
+          date: slot.date,
+          time: `${slot.startTime} - ${slot.endTime}`
+        }
+      });
+    } catch (error) {
+      console.error("Error deleting appointment slot:", error);
+      return res.status(500).json({
+        message: "Server error",
+        error: error.message,
+        status: 500
+      });
+    }
+  }
+);
+
+// ============================================
+// Bulk edit appointment slots
+// ============================================
+
+router.put(
+  "/appointment-slots/bulk-edit",
+  strictAdminMiddleware,
+  async (req, res) => {
+    try {
+      const { slotIds, updates, action } = req.body;
+
+      // Validate input
+      if (!slotIds || !Array.isArray(slotIds) || slotIds.length === 0) {
+        return res.status(400).json({
+          message: "Invalid data. 'slotIds' array is required.",
+          status: 400
+        });
+      }
+
+      // Validate all IDs
+      const invalidIds = slotIds.filter(id => !ObjectId.isValid(id));
+      if (invalidIds.length > 0) {
+        return res.status(400).json({
+          message: "Invalid slot IDs found",
+          status: 400,
+          invalidIds: invalidIds
+        });
+      }
+
+      const objectIds = slotIds.map(id => new ObjectId(id));
+      let result;
+      let updateOperation = {};
+
+      // Handle different bulk edit actions
+      switch (action) {
+        case 'add_consultants':
+          // Add consultants to existing list (no duplicates)
+          if (!updates.consultants || !Array.isArray(updates.consultants)) {
+            return res.status(400).json({
+              message: "consultants array is required for add_consultants action",
+              status: 400
+            });
+          }
+          updateOperation = {
+            $addToSet: { consultants: { $each: updates.consultants } }
+          };
+          break;
+
+        case 'remove_consultants':
+          // Remove consultants from list
+          if (!updates.consultants || !Array.isArray(updates.consultants)) {
+            return res.status(400).json({
+              message: "consultants array is required for remove_consultants action",
+              status: 400
+            });
+          }
+          updateOperation = {
+            $pull: { consultants: { $in: updates.consultants } }
+          };
+          break;
+
+        case 'replace_consultants':
+          // Replace entire consultants array
+          if (!updates.consultants || !Array.isArray(updates.consultants)) {
+            return res.status(400).json({
+              message: "consultants array is required for replace_consultants action",
+              status: 400
+            });
+          }
+          updateOperation = {
+            $set: { consultants: updates.consultants }
+          };
+          break;
+
+        case 'update_time':
+          // Update time for multiple slots
+          const timeUpdates = {};
+          if (updates.startTime) timeUpdates.startTime = updates.startTime;
+          if (updates.endTime) timeUpdates.endTime = updates.endTime;
+          
+          if (Object.keys(timeUpdates).length === 0) {
+            return res.status(400).json({
+              message: "startTime or endTime is required for update_time action",
+              status: 400
+            });
+          }
+          updateOperation = { $set: timeUpdates };
+          break;
+
+        default:
+          return res.status(400).json({
+            message: "Invalid action. Allowed: add_consultants, remove_consultants, replace_consultants, update_time",
+            status: 400
+          });
+      }
+
+      // Perform bulk update
+      result = await scheduleCollection.updateMany(
+        { _id: { $in: objectIds } },
+        updateOperation
+      );
+
+      // Fetch updated slots
+      const updatedSlots = await scheduleCollection
+        .find({ _id: { $in: objectIds } })
+        .toArray();
+
+      return res.status(200).json({
+        message: "Bulk edit completed successfully",
+        status: 200,
+        summary: {
+          matched: result.matchedCount,
+          modified: result.modifiedCount,
+          action: action
+        },
+        slots: updatedSlots
+      });
+    } catch (error) {
+      console.error("Error in bulk edit:", error);
+      return res.status(500).json({
+        message: "Server error",
+        error: error.message,
+        status: 500
+      });
+    }
+  }
+);
+
+// ============================================
+// Bulk delete appointment slots
+// ============================================
+
+router.delete(
+  "/appointment-slots/bulk-delete",
+  strictAdminMiddleware,
+  async (req, res) => {
+    try {
+      const { slotIds, filter } = req.body;
+
+      let deleteFilter = {};
+      let deletedCount = 0;
+      let deletedSlots = [];
+
+      // Option 1: Delete by specific IDs
+      if (slotIds && Array.isArray(slotIds) && slotIds.length > 0) {
+        // Validate all IDs
+        const invalidIds = slotIds.filter(id => !ObjectId.isValid(id));
+        if (invalidIds.length > 0) {
+          return res.status(400).json({
+            message: "Invalid slot IDs found",
+            status: 400,
+            invalidIds: invalidIds
+          });
+        }
+
+        const objectIds = slotIds.map(id => new ObjectId(id));
+        
+        // Fetch slots before deletion (for response)
+        deletedSlots = await scheduleCollection
+          .find({ _id: { $in: objectIds } })
+          .toArray();
+
+        // Delete by IDs
+        const result = await scheduleCollection.deleteMany({
+          _id: { $in: objectIds }
+        });
+
+        deletedCount = result.deletedCount;
+      }
+      // Option 2: Delete by filter (date, date range, consultant)
+      else if (filter && typeof filter === 'object') {
+        // Build delete filter
+        if (filter.date) {
+          deleteFilter.date = filter.date;
+        }
+        
+        if (filter.startDate || filter.endDate) {
+          deleteFilter.dateObject = {};
+          if (filter.startDate) {
+            deleteFilter.dateObject.$gte = new Date(filter.startDate);
+          }
+          if (filter.endDate) {
+            deleteFilter.dateObject.$lte = new Date(filter.endDate);
+          }
+        }
+        
+        if (filter.consultant) {
+          deleteFilter.consultants = filter.consultant;
+        }
+
+        if (Object.keys(deleteFilter).length === 0) {
+          return res.status(400).json({
+            message: "At least one filter criteria is required (date, startDate, endDate, consultant)",
+            status: 400
+          });
+        }
+
+        // Fetch slots before deletion (for response)
+        deletedSlots = await scheduleCollection
+          .find(deleteFilter)
+          .toArray();
+
+        // Delete by filter
+        const result = await scheduleCollection.deleteMany(deleteFilter);
+        deletedCount = result.deletedCount;
+      } else {
+        return res.status(400).json({
+          message: "Either 'slotIds' array or 'filter' object is required",
+          status: 400
+        });
+      }
+
+      return res.status(200).json({
+        message: "Bulk delete completed successfully",
+        status: 200,
+        summary: {
+          deletedCount: deletedCount,
+          deletedSlots: deletedSlots.length
+        },
+        slots: deletedSlots.map(slot => ({
+          id: slot._id,
+          date: slot.date,
+          time: `${slot.startTime} - ${slot.endTime}`,
+          consultants: slot.consultants
+        }))
+      });
+    } catch (error) {
+      console.error("Error in bulk delete:", error);
+      return res.status(500).json({
+        message: "Server error",
+        error: error.message,
+        status: 500
+      });
+    }
+  }
+);
+
+// ============================================
+// Delete all slots for a specific date
+// ============================================
+
+router.delete(
+  "/appointment-slots/by-date/:date",
+  strictAdminMiddleware,
+  async (req, res) => {
+    try {
+      const { date } = req.params;
+
+      // Fetch slots before deletion
+      const slots = await scheduleCollection.find({ date: date }).toArray();
+
+      if (slots.length === 0) {
+        return res.status(404).json({
+          message: "No appointment slots found for this date",
+          status: 404,
+          date: date
+        });
+      }
+
+      // Delete all slots for the date
+      const result = await scheduleCollection.deleteMany({ date: date });
+
+      return res.status(200).json({
+        message: `All appointment slots deleted for ${date}`,
+        status: 200,
+        deletedCount: result.deletedCount,
+        deletedSlots: slots.map(slot => ({
+          id: slot._id,
+          time: `${slot.startTime} - ${slot.endTime}`,
+          consultants: slot.consultants
+        }))
+      });
+    } catch (error) {
+      console.error("Error deleting slots by date:", error);
+      return res.status(500).json({
+        message: "Server error",
+        error: error.message,
+        status: 500
+      });
+    }
+  }
+);
+
+// ============================================
+// Add/Remove consultant from single slot
+// ============================================
+
+router.put(
+  "/appointment-slot/:id/consultant",
+  strictAdminMiddleware,
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { consultant, action } = req.body; // action: 'add' or 'remove'
+
+      // Validate ID
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).json({
+          message: "Invalid slot ID",
+          status: 400
+        });
+      }
+
+      if (!consultant || !action) {
+        return res.status(400).json({
+          message: "consultant and action (add/remove) are required",
+          status: 400
+        });
+      }
+
+      const slot = await scheduleCollection.findOne({
+        _id: new ObjectId(id)
+      });
+
+      if (!slot) {
+        return res.status(404).json({
+          message: "Appointment slot not found",
+          status: 404
+        });
+      }
+
+      let updateOperation;
+      let message;
+
+      if (action === 'add') {
+        // Check if consultant already exists
+        if (slot.consultants.includes(consultant)) {
+          return res.status(409).json({
+            message: "Consultant already exists in this slot",
+            status: 409
+          });
+        }
+        updateOperation = { $addToSet: { consultants: consultant } };
+        message = "Consultant added successfully";
+      } else if (action === 'remove') {
+        // Check if consultant exists
+        if (!slot.consultants.includes(consultant)) {
+          return res.status(404).json({
+            message: "Consultant not found in this slot",
+            status: 404
+          });
+        }
+        updateOperation = { $pull: { consultants: consultant } };
+        message = "Consultant removed successfully";
+      } else {
+        return res.status(400).json({
+          message: "Invalid action. Use 'add' or 'remove'",
+          status: 400
+        });
+      }
+
+      // Update the slot
+      await scheduleCollection.updateOne(
+        { _id: new ObjectId(id) },
+        updateOperation
+      );
+
+      // Fetch updated slot
+      const updatedSlot = await scheduleCollection.findOne({
+        _id: new ObjectId(id)
+      });
+
+      // If no consultants left after removal, optionally delete the slot
+      if (action === 'remove' && updatedSlot.consultants.length === 0) {
+        await scheduleCollection.deleteOne({ _id: new ObjectId(id) });
+        return res.status(200).json({
+          message: "Last consultant removed. Slot deleted.",
+          status: 200,
+          action: "deleted"
+        });
+      }
+
+      return res.status(200).json({
+        message: message,
+        status: 200,
+        slot: updatedSlot
+      });
+    } catch (error) {
+      console.error("Error updating consultant:", error);
+      return res.status(500).json({
+        message: "Server error",
+        error: error.message,
+        status: 500
+      });
+    }
+  }
+);
+
+
 
 router.get("/appointments", strictAdminMiddleware, async (req, res) => {
   try {

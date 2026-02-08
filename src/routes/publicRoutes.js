@@ -23,7 +23,7 @@ const usersCollection = db?.collection("users");
 const voucherCollection = db?.collection("vouchers");
 const orderCollection = db?.collection("orders");
 const resourceCollection = db?.collection("resources");
-
+const scheduleCollection = db?.collection("schedules");
 const appointmentReviewCollection = db?.collection("appointment-reviews");
 
 let transporter = nodemailer.createTransport({
@@ -517,6 +517,56 @@ router.post("/book-appointment", async (req, res) => {
     });
   }
 });
+
+
+// ============================================
+// Get all appointment slots
+// ============================================
+
+router.get(
+  "/available-appointment-slots",
+  async (req, res) => {
+    try {
+      const { date, consultant, startDate, endDate } = req.query;
+      
+      // Build filter query
+      const filter = {};
+      
+      if (date) {
+        filter.date = date;
+      }
+      
+      if (startDate || endDate) {
+        filter.dateObject = {};
+        if (startDate) filter.dateObject.$gte = new Date(startDate);
+        if (endDate) filter.dateObject.$lte = new Date(endDate);
+      }
+      
+      if (consultant) {
+        filter.consultants = consultant;
+      }
+
+      const slots = await scheduleCollection
+        .find(filter)
+        .sort({ dateObject: 1, startTime: 1 })
+        .toArray();
+
+      return res.status(200).json({
+        message: "Appointment slots retrieved successfully",
+        status: 200,
+        count: slots.length,
+        slots: slots
+      });
+    } catch (error) {
+      console.error("Error fetching appointment slots:", error);
+      return res.status(500).json({
+        message: "Server error",
+        error: error.message,
+        status: 500
+      });
+    }
+  }
+);
 
 router.get("/course/:id", async (req, res) => {
   try {
@@ -1370,46 +1420,7 @@ router.get("/top-reviews", async (req, res) => {
   }
 });
 
-// payments
-
-router.post("/initiate-payment", async (req, res) => {
-  const { invoice, name, mobile, address, reference } = req.body;
-
-  const payload = {
-    merchantId: process.env.PAYSTATION_MERCHANT_ID,
-    password: process.env.PAYSTATION_PASSWORD,
-    invoice_number: invoice,
-    currency: "BDT",
-    payment_amount: 500,
-    pay_with_charge: 1,
-    reference: reference || "Appointment Booking",
-    cust_name: name,
-    cust_phone: mobile,
-    cust_email: "noemail@sukunlife.com",
-    cust_address: address,
-    callback_url: `${process.env.CLIENT_URL}/api/paystation/callback`,
-  };
-
-  try {
-    const response = await fetch(
-      "https://api.paystation.com.bd/initiate-payment",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-    );
-
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ message: "Payment initiation failed" });
-  }
-});
-
 // courses public video routes
-
-
 router.get(
   "/course/public/stream/:videoId/:file",
   async (req, res) => {
