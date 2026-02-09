@@ -503,7 +503,7 @@ router.post("/book-appointment", async (req, res) => {
       date: date,
       startTime: startTime,
       endTime: endTime,
-      consultants: consultant,
+      // consultants: consultant,
     });
 
     if (!existingSlot) {
