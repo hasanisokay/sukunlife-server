@@ -2,7 +2,7 @@ import express from "express";
 import dbConnect from "../config/db.mjs";
 import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
 import dotenv from "dotenv";
-import convertDateToDateObject from "../utils/convertDateToDateObject.mjs";
+import convertDateToDateObject, { convertISODateToDateObject } from "../utils/convertDateToDateObject.mjs";
 import { ObjectId } from "mongodb";
 import nodemailer from "nodemailer";
 import sendOrderEmailToAdmin from "../utils/sendOrderEmailToAdmin.mjs";
@@ -478,9 +478,7 @@ router.get("/all-blog-tags", async (req, res) => {
 
 router.post("/book-appointment", async (req, res) => {
   try {
-
-        const bookingData = req.body;
-
+    const bookingData = req.body;
     const trimmedBookingData = {};
     for (const key in bookingData) {
       trimmedBookingData[key] =
@@ -489,12 +487,42 @@ router.post("/book-appointment", async (req, res) => {
           : bookingData[key];
     }
 
+    // Extract slot information for deletion
+    const { date, startTime, endTime, consultant } = trimmedBookingData;
+
+    // Validate required slot information
+    if (!date || !startTime || !endTime || !consultant) {
+      return res.status(400).json({
+        message:
+          "Missing required booking information (date, startTime, endTime, consultant)",
+        status: 400,
+      });
+    }
+
+    const existingSlot = await scheduleCollection.findOneAndDelete({
+      date: date,
+      startTime: startTime,
+      endTime: endTime,
+      consultants: consultant,
+    });
+
+    if (!existingSlot) {
+      return res.status(409).json({
+        message:
+          "This time slot is no longer available. Please select another time.",
+        status: 409,
+      });
+    }
+
+    // Step 4: Proceed with booking creation
     const modifiedBookingData = trimmedBookingData;
-    modifiedBookingData.bookedDate = convertDateToDateObject(bookingData.date);
+    modifiedBookingData.bookedDate = convertISODateToDateObject(bookingData.date);
     modifiedBookingData.bookingDate = new Date();
 
     const result = await appointmentCollection.insertOne(modifiedBookingData);
+
     if (result?.insertedId) {
+      // Send confirmation emails (don't wait for them)
       Promise.all([
         sendAdminBookingConfirmationEmail(trimmedBookingData, transporter),
         sendUserBookingConfirmationEmail(trimmedBookingData, transporter),
@@ -507,9 +535,20 @@ router.post("/book-appointment", async (req, res) => {
         result,
         status: 200,
       });
+    } else {
+      // Booking creation failed - try to restore the slot
+      // This is a compensating transaction
+      // Restore the deleted slot
+      await scheduleCollection.insertOne(existingSlot).catch((err) => {
+        console.error("Failed to restore slot after booking failure:", err);
+      });
+      return res.status(500).json({
+        message: "Failed to create booking. Please try again.",
+        status: 500,
+      });
     }
   } catch (error) {
-    console.error(error);
+    console.error("Booking error:", error);
     return res.status(500).json({
       message: "Server error",
       status: 500,

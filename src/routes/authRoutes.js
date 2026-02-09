@@ -12,12 +12,9 @@ import dotenv from "dotenv";
 import { ObjectId } from "mongodb";
 import {
   ACCESS_COOKIE_MAX_AGE,
-  ACCESS_COOKIE_NAME,
   ACCESS_EXPIRATION,
   ACCESS_TOKEN_SECRET_KEY,
-  DOMAIN,
   REFRESH_COOKIE_MAX_AGE,
-  REFRESH_COOKIE_NAME,
   REFRESH_EXPIRATION,
   REFRESH_SECRET_KEY,
 } from "../constants/names.mjs";

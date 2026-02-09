@@ -1,5 +1,7 @@
+import { capitalize, convertTo12Hour, formatDateWithOrdinal } from "./convertDateToDateObject.mjs";
+
 const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
-    // console.log(bookingData)
+  // console.log(bookingData)
   const generateEmailHTML = (bookingData) => `
   <!DOCTYPE html>
   <html lang="en">
@@ -72,10 +74,11 @@ const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
                           bookingData.address
                         }</li>
                         <li><strong>Service:</strong> ${
-                          bookingData?.service
+                          capitalize(bookingData?.service)
                         }</li>
-                        <li><strong>Date:</strong> ${bookingData?.date}</li>
-                        <li><strong>Time:</strong> ${bookingData?.time}</li>
+                        <li><strong>Date:</strong> ${formatDateWithOrdinal(bookingData.date)}</li>
+                        <li><strong>Start Time:</strong>  ${convertTo12Hour(bookingData?.startTime)}</li>
+                        <li><strong>End Time: </strong>${convertTo12Hour(bookingData?.endTime)}</li>
                          <li><strong>Consultant:</strong> ${bookingData?.consultant || "N/A"}</li>
                          <li><strong>Reference:</strong> ${bookingData?.reference || "N/A"}</li>
                         <li><strong>Problem:</strong> ${
@@ -98,8 +101,8 @@ const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
   // Define email options
   let mailOptions = {
     from: '"SukunLife" <no-reply@sukunlife.com>',
-    to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
-    // to: "devhasanvibes@gmail.com, hasanisokay@gmail.com",
+    // to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
+    to: "devhasanvibes@gmail.com",
     subject: "New Appointment - SukunLife",
     html: generateEmailHTML(bookingData),
   };

@@ -1,3 +1,9 @@
+import {
+  capitalize,
+  convertTo12Hour,
+  formatDateWithOrdinal,
+} from "./convertDateToDateObject.mjs";
+
 const sendUserBookingConfirmationEmail = async (bookingData, transporter) => {
   const generateUserEmailHTML = (bookingData) => `
   <!DOCTYPE html>
@@ -16,11 +22,13 @@ const sendUserBookingConfirmationEmail = async (bookingData, transporter) => {
         <p>Thank you for booking with <strong>SukunLife</strong>. Here are your appointment details:</p>
 
         <ul style="list-style:none;padding:0;">
-          <li><strong>Service:</strong> ${bookingData.service}</li>
-          <li><strong>Date:</strong> ${bookingData.date}</li>
-          <li><strong>Time:</strong> ${bookingData.time}</li>
+          <li><strong>Service:</strong> ${capitalize(bookingData.service)}</li>
+          <li><strong>Date:</strong> ${formatDateWithOrdinal(bookingData.date)}</li>
+          <li><strong>Start Time: </strong> ${convertTo12Hour(bookingData?.startTime)}</li>
+          <li><strong>End Time: </strong> ${convertTo12Hour(bookingData?.endTime)}</li>
           <li><strong>Consultant:</strong> ${bookingData.consultant || "N/A"}</li>
           <li><strong>Reference:</strong> ${bookingData.reference || "N/A"}</li>
+            <li><strong>Problem:</strong> ${bookingData?.problem}</li>
         </ul>
 
         <p>We will contact you shortly if needed.</p>
@@ -49,7 +57,10 @@ const sendUserBookingConfirmationEmail = async (bookingData, transporter) => {
       return { status: 400, message: "User email not sent" };
     }
   } catch (error) {
-    return { status: 500, message: `Error sending user email: ${error.message}` };
+    return {
+      status: 500,
+      message: `Error sending user email: ${error.message}`,
+    };
   }
 };
 
