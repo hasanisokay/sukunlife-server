@@ -215,7 +215,7 @@ style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24
 };
 
 
-  // Define email options
+  // Define email option
   let mailOptions = {
     from: '"SukunLife" <no-reply@sukunlife.com>',
     to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
