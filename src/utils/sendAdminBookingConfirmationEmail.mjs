@@ -101,8 +101,8 @@ const sendAdminBookingConfirmationEmail = async (bookingData, transporter) => {
   // Define email options
   let mailOptions = {
     from: '"SukunLife" <no-reply@sukunlife.com>',
-    // to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
-    to: "devhasanvibes@gmail.com",
+    to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
+    // to: "devhasanvibes@gmail.com",
     subject: "New Appointment - SukunLife",
     html: generateEmailHTML(bookingData),
   };
