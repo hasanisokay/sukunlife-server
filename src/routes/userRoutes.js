@@ -27,6 +27,27 @@ const usersCollection = db?.collection("users");
 const orderCollection = db?.collection("orders");
 const appointmentReviewCollection = db?.collection("appointment-reviews");
 
+
+
+
+// ============================================
+// CORS Preflight Handlers 
+// ============================================
+router.options("/course/stream/:courseId/:videoId/*", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.status(204).end();
+});
+
+router.options("/course/key/:videoId", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.status(204).end();
+});
+
+
 router.put("/update-user-info", lowUserOnlyMiddleware, async (req, res) => {
   try {
     const body = req.body;
@@ -853,19 +874,19 @@ router.get(
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
     const { courseId, videoId } = req.params;
-    const file = req.params[0] || "master.m3u8"; // Default to master playlist
+    const file = req.params[0] || "master.m3u8";
     const { token } = req.query;
 
-    console.log(`Streaming request: courseId=${courseId}, videoId=${videoId}, file=${file}`);
+    console.log(`📹 Stream request: courseId=${courseId}, videoId=${videoId}, file=${file}`);
 
     // Verify course exists
     const course = await courseCollection.findOne({ courseId });
     if (!course) {
-      console.error("Course not found:", courseId);
+      console.error("❌ Course not found:", courseId);
       return res.status(404).end("Course not found");
     }
 
-    // Find video item
+    // Find video item in course
     let videoItem = null;
     for (const module of course.modules) {
       for (const item of module.items) {
@@ -878,7 +899,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     }
 
     if (!videoItem) {
-      console.error("Video not found:", videoId);
+      console.error("❌ Video not found:", videoId);
       return res.status(404).end("Video not found");
     }
 
@@ -887,20 +908,42 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     // Token verification for private videos
     if (!isPublic) {
       if (!token) {
-        console.error("Missing token for private video");
+        console.error("❌ Missing token for private video");
         return res.status(403).end("Missing token");
       }
 
       try {
         const decoded = Buffer.from(token, "base64url").toString();
-        const userId = decoded.split("|")[0];
+        const parts = decoded.split("|");
 
-        if (!verifyHLSToken(token, userId, courseId, videoId)) {
-          console.error("Invalid token");
+        if (parts.length !== 4) {
+          console.error("❌ Invalid token format");
           return res.status(403).end("Invalid token");
         }
+
+        const userId = parts[0];
+
+        // Verify token signature
+        if (!verifyHLSToken(token, userId, courseId, videoId)) {
+          console.error("❌ Token verification failed");
+          return res.status(403).end("Invalid token");
+        }
+
+        // Verify user still has access to the course
+        const userHasAccess = await courseCollection.findOne({
+          courseId,
+          students: userId, // Adjust based on how you store student IDs
+        });
+
+        if (!userHasAccess) {
+          console.error(`❌ User ${userId} does not have access to course ${courseId}`);
+          return res.status(403).end("Access denied");
+        }
+
+        console.log(`✅ Token verified for user ${userId}`);
+
       } catch (err) {
-        console.error("Token verification error:", err);
+        console.error("❌ Token verification error:", err);
         return res.status(403).end("Invalid token");
       }
     }
@@ -912,16 +955,18 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     // Enhanced path traversal protection
     const normalizedFilePath = path.normalize(filePath);
     const normalizedBasePath = path.normalize(basePath);
-    
-    if (!normalizedFilePath.startsWith(normalizedBasePath + path.sep) && 
-        normalizedFilePath !== normalizedBasePath) {
-      console.error("Path traversal attempt:", filePath);
+
+    if (
+      !normalizedFilePath.startsWith(normalizedBasePath + path.sep) &&
+      normalizedFilePath !== normalizedBasePath
+    ) {
+      console.error("❌ Path traversal attempt:", filePath);
       return res.status(403).end("Invalid path");
     }
 
     // Check file exists
     if (!fs.existsSync(filePath)) {
-      console.error(`File not found: ${filePath}`);
+      console.error(`❌ File not found: ${filePath}`);
       return res.status(404).end("File not found");
     }
 
@@ -929,7 +974,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     if (file.endsWith(".m3u8")) {
       let playlist = fs.readFileSync(filePath, "utf8");
 
-      console.log(`Serving playlist: ${file}`);
+      console.log(`✅ Serving playlist: ${file}`);
 
       if (!isPublic && token) {
         // For master playlist, rewrite variant playlist URLs
@@ -952,8 +997,8 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
           /URI="([^"]+)"/g,
           (match, uri) => {
             // If the URI doesn't already have a token, add it
-            if (!uri.includes('token=')) {
-              return `URI="${uri}${uri.includes('?') ? '&' : '?'}token=${token}"`;
+            if (!uri.includes("token=")) {
+              return `URI="${uri}${uri.includes("?") ? "&" : "?"}token=${token}"`;
             }
             return match;
           }
@@ -963,6 +1008,8 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
       res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
       return res.send(playlist);
     }
 
@@ -971,11 +1018,13 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       res.setHeader("Content-Type", "video/mp2t");
       res.setHeader("Cache-Control", "public, max-age=31536000");
       res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
       return fs.createReadStream(filePath).pipe(res);
     }
 
     // Other files
-    console.error("Unsupported file type:", file);
+    console.error("❌ Unsupported file type:", file);
     res.status(404).end("Unsupported file type");
   } catch (err) {
     console.error("❌ Streaming error:", err);
@@ -987,34 +1036,104 @@ router.get("/course/key/:videoId", async (req, res) => {
     const { videoId } = req.params;
     const { token } = req.query;
 
-    if (!token) return res.status(403).end("Missing token");
+    console.log(`🔑 Key request for videoId: ${videoId}`);
 
-    const decoded = Buffer.from(token, "base64url").toString();
-    const [userId, courseId, vid] = decoded.split("|");
-
-    if (!verifyHLSToken(token, userId, courseId, videoId)) {
-      return res.status(403).end("Invalid token");
+    // Check if token is provided
+    if (!token) {
+      console.error("❌ Missing token for key request");
+      return res.status(403).end("Missing token");
     }
 
+    // Decode and verify token
+    let userId, courseId, tokenVideoId;
+    try {
+      const decoded = Buffer.from(token, "base64url").toString();
+      const parts = decoded.split("|");
+      
+      if (parts.length !== 4) {
+        console.error("❌ Invalid token format");
+        return res.status(403).end("Invalid token format");
+      }
+
+      [userId, courseId, tokenVideoId] = parts;
+
+      console.log(`Token decoded: userId=${userId}, courseId=${courseId}, videoId=${tokenVideoId}`);
+
+      // Verify the videoId from URL matches the one in the token
+      if (tokenVideoId !== videoId) {
+        console.error(`❌ VideoId mismatch: URL=${videoId}, Token=${tokenVideoId}`);
+        return res.status(403).end("Invalid token");
+      }
+
+      // Verify the token signature
+      if (!verifyHLSToken(token, userId, courseId, videoId)) {
+        console.error("❌ Token verification failed");
+        return res.status(403).end("Invalid token");
+      }
+
+    } catch (err) {
+      console.error("❌ Token decode error:", err);
+      return res.status(403).end("Invalid token format");
+    }
+
+    // Verify user still has access to the course
+    const course = await courseCollection.findOne({
+      courseId,
+      students: userId, // Adjust based on how you store student IDs
+    });
+
+    if (!course) {
+      console.error(`❌ User ${userId} does not have access to course ${courseId}`);
+      return res.status(403).end("Access denied");
+    }
+
+    // Check if video exists in course
+    let videoExists = false;
+    for (const module of course.modules) {
+      for (const item of module.items) {
+        if (item.type === "video" && item.url.filename === videoId) {
+          videoExists = true;
+          break;
+        }
+      }
+      if (videoExists) break;
+    }
+
+    if (!videoExists) {
+      console.error(`❌ Video ${videoId} not found in course ${courseId}`);
+      return res.status(404).end("Video not found in course");
+    }
+
+    // Construct path to encryption key
     const keyPath = path.join(
       "/data/uploads/private/videos",
       videoId,
-      "key.key",
+      "key.key"
     );
 
+    // Verify key file exists
     if (!fs.existsSync(keyPath)) {
+      console.error(`❌ Key file not found: ${keyPath}`);
       return res.status(404).end("Key not found");
     }
 
+    console.log(`✅ Serving encryption key for ${videoId} to user ${userId}`);
+
+    // Set response headers
     res.setHeader("Content-Type", "application/octet-stream");
-    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    // Stream the key file
     fs.createReadStream(keyPath).pipe(res);
+
   } catch (err) {
-    console.error(err);
+    console.error("❌ Key endpoint error:", err);
     res.status(500).end("Server error");
   }
 });
-
 router.post("/ping-stream", strictUserOnlyMiddleware, async (req, res) => {
   await streamsCollection.updateOne(
     { userId: req.user._id },
