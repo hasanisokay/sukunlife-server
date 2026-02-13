@@ -932,7 +932,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
         // Verify user still has access to the course
         const userHasAccess = await courseCollection.findOne({
           courseId,
-          students: userId, // Adjust based on how you store student IDs
+          students: userId,
         });
 
         if (!userHasAccess) {
@@ -979,28 +979,32 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       if (!isPublic && token) {
         // For master playlist, rewrite variant playlist URLs
         if (file === "master.m3u8") {
+          // Rewrite variant playlists
           playlist = playlist.replace(
             /^(720p\/index\.m3u8|1080p\/index\.m3u8)$/gm,
             `$1?token=${token}`
           );
         } else {
           // For variant playlists (720p/index.m3u8, 1080p/index.m3u8)
-          // Rewrite .ts segment URLs (they're in the same directory)
+          // Rewrite .ts segment URLs
           playlist = playlist.replace(
             /^(seg_\d+\.ts)$/gm,
             `$1?token=${token}`
           );
         }
 
-        // Rewrite encryption key URI if present
+        // ⭐ CRITICAL FIX: Rewrite encryption key URI
+        // This regex handles both with and without quotes around the URI
         playlist = playlist.replace(
-          /URI="([^"]+)"/g,
+          /#EXT-X-KEY:METHOD=AES-128,URI="?([^"\n]+)"?/g,
           (match, uri) => {
-            // If the URI doesn't already have a token, add it
-            if (!uri.includes("token=")) {
-              return `URI="${uri}${uri.includes("?") ? "&" : "?"}token=${token}"`;
+            // Check if URI already has token
+            if (uri.includes('token=')) {
+              return match;
             }
-            return match;
+            // Add token to URI
+            const separator = uri.includes('?') ? '&' : '?';
+            return `#EXT-X-KEY:METHOD=AES-128,URI="${uri}${separator}token=${token}"`;
           }
         );
       }
