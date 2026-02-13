@@ -757,6 +757,35 @@ router.get("/courses", async (req, res) => {
   }
 });
 
+router.get(
+  "/course/stream-url/:courseId/:videoId",
+  async (req, res) => {
+    const { courseId, videoId } = req.params;
+    const course = await courseCollection.findOne({
+      courseId,
+    });
+
+    if (!course) return res.status(404).json({ error: "Course not found" });
+
+    let videoItem = null;
+    for (const module of course.modules) {
+      for (const item of module.items) {
+        if (item.type === "video"&& item.status==='public' && item.url.filename === videoId) {
+          videoItem = item;
+          break;
+        }
+      }
+      if (videoItem) break;
+    }
+
+    if (!videoItem) return res.status(404).json({ error: "Video not found" });
+
+      return res.json({
+        url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/master.m3u8`,
+      });
+
+  },
+);
 // shops
 //get all the product categories
 router.get("/all-product-categories", async (req, res) => {
