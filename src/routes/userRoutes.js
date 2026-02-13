@@ -850,7 +850,7 @@ router.get(
     }
 
     if (!videoItem) return res.status(404).json({ error: "Video not found" });
-
+console.log({videoItemStatus:videoItem.status})
     // public video
     if (videoItem.status === "public") {
       return res.json({
@@ -860,7 +860,7 @@ router.get(
 
     // private video
     const token = createHLSToken(userId, courseId, videoId);
-
+console.log({token})
     res.json({
       url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/master.m3u8?token=${token}`,
     });
