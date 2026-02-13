@@ -870,7 +870,6 @@ router.get(
     });
   },
 );
-
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
     const { courseId, videoId } = req.params;
@@ -993,18 +992,19 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
           );
         }
 
-        // ⭐ CRITICAL FIX: Rewrite encryption key URI
-        // This regex handles both with and without quotes around the URI
+        // ⭐ CRITICAL FIX: Rewrite encryption key URI (with IV parameter support)
         playlist = playlist.replace(
-          /#EXT-X-KEY:METHOD=AES-128,URI="?([^"\n]+)"?/g,
-          (match, uri) => {
+          /#EXT-X-KEY:METHOD=AES-128,URI="([^"]+)"(,IV=[^,\n]+)?/g,
+          (match, uri, ivPart) => {
             // Check if URI already has token
             if (uri.includes('token=')) {
               return match;
             }
             // Add token to URI
             const separator = uri.includes('?') ? '&' : '?';
-            return `#EXT-X-KEY:METHOD=AES-128,URI="${uri}${separator}token=${token}"`;
+            const newUri = `${uri}${separator}token=${token}`;
+            // Reconstruct the line with IV if present
+            return `#EXT-X-KEY:METHOD=AES-128,URI="${newUri}"${ivPart || ''}`;
           }
         );
       }
