@@ -870,14 +870,17 @@ router.get(
     });
   },
 );
+
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
     const { courseId, videoId } = req.params;
     const file = req.params[0] || "master.m3u8";
     const { token } = req.query;
 
-    console.log(`📹 Stream request: courseId=${courseId}, videoId=${videoId}, file=${file}`);
-
+    // ⭐ ADD THIS DEBUG LOG
+    console.log(`📹 Stream request: courseId=${courseId}, videoId=${videoId}, file=${file}, token=${token ? 'present ✅' : 'MISSING ❌'}`);
+    console.log(`📹 Full URL: ${req.url}`);
+    console.log(`📹 Query params:`, req.query);
     // Verify course exists
     const course = await courseCollection.findOne({ courseId });
     if (!course) {
@@ -968,65 +971,53 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       console.error(`❌ File not found: ${filePath}`);
       return res.status(404).end("File not found");
     }
+
+    // Handle playlists (.m3u8)
     if (file.endsWith(".m3u8")) {
-  let playlist = fs.readFileSync(filePath, "utf8");
+      let playlist = fs.readFileSync(filePath, "utf8");
 
-  console.log(`✅ Serving playlist: ${file}`);
+      console.log(`✅ Serving playlist: ${file}`);
 
-  if (!isPublic && token) {
-    // 🔍 DEBUG: Log BEFORE rewriting
-    console.log("📝 BEFORE rewrite:");
-    console.log(playlist.substring(0, 500)); // First 500 chars
-    
-    // For master playlist, rewrite variant playlist URLs
-    if (file === "master.m3u8") {
-      playlist = playlist.replace(
-        /^(720p\/index\.m3u8|1080p\/index\.m3u8)$/gm,
-        `$1?token=${token}`
-      );
-    } else {
-      // For variant playlists
-      playlist = playlist.replace(
-        /^(seg_\d+\.ts)$/gm,
-        `$1?token=${token}`
-      );
-    }
-
-    // ⭐ Rewrite encryption key URI
-    playlist = playlist.replace(
-      /#EXT-X-KEY:METHOD=AES-128,URI="([^"]+)"(,IV=[^,\n]+)?/g,
-      (match, uri, ivPart) => {
-        console.log("🔑 Found encryption key line:", match);
-        console.log("🔑 Extracted URI:", uri);
-        console.log("🔑 IV part:", ivPart);
-        
-        if (uri.includes('token=')) {
-          console.log("⚠️ Token already present, skipping");
-          return match;
+      if (!isPublic && token) {
+        // For master playlist, rewrite variant playlist URLs
+        if (file === "master.m3u8") {
+          // Rewrite variant playlists
+          playlist = playlist.replace(
+            /^(720p\/index\.m3u8|1080p\/index\.m3u8)$/gm,
+            `$1?token=${token}`
+          );
+        } else {
+          // For variant playlists (720p/index.m3u8, 1080p/index.m3u8)
+          // Rewrite .ts segment URLs
+          playlist = playlist.replace(
+            /^(seg_\d+\.ts)$/gm,
+            `$1?token=${token}`
+          );
         }
-        
-        const separator = uri.includes('?') ? '&' : '?';
-        const newUri = `${uri}${separator}token=${token}`;
-        const result = `#EXT-X-KEY:METHOD=AES-128,URI="${newUri}"${ivPart || ''}`;
-        
-        console.log("✨ Rewritten to:", result);
-        return result;
+
+        // ⭐ CRITICAL FIX: Rewrite encryption key URI
+        // This regex handles both with and without quotes around the URI
+        playlist = playlist.replace(
+          /#EXT-X-KEY:METHOD=AES-128,URI="?([^"\n]+)"?/g,
+          (match, uri) => {
+            // Check if URI already has token
+            if (uri.includes('token=')) {
+              return match;
+            }
+            // Add token to URI
+            const separator = uri.includes('?') ? '&' : '?';
+            return `#EXT-X-KEY:METHOD=AES-128,URI="${uri}${separator}token=${token}"`;
+          }
+        );
       }
-    );
 
-    // 🔍 DEBUG: Log AFTER rewriting
-    console.log("📝 AFTER rewrite:");
-    console.log(playlist.substring(0, 500)); // First 500 chars
-  }
-
-  res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  return res.send(playlist);
-}
-
+      res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      return res.send(playlist);
+    }
 
     // Handle .ts segments
     if (file.endsWith(".ts")) {
