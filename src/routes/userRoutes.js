@@ -853,17 +853,19 @@ router.get(
 router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
   try {
     const { courseId, videoId } = req.params;
-    const file = req.params[0];
+    const file = req.params[0] || "master.m3u8"; // Default to master playlist
     const { token } = req.query;
 
-    console.log(`Streaming request: ${file}`);
+    console.log(`Streaming request: courseId=${courseId}, videoId=${videoId}, file=${file}`);
 
+    // Verify course exists
     const course = await courseCollection.findOne({ courseId });
     if (!course) {
       console.error("Course not found:", courseId);
       return res.status(404).end("Course not found");
     }
 
+    // Find video item
     let videoItem = null;
     for (const module of course.modules) {
       for (const item of module.items) {
@@ -882,6 +884,7 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
 
     const isPublic = videoItem.status === "public";
 
+    // Token verification for private videos
     if (!isPublic) {
       if (!token) {
         console.error("Missing token for private video");
@@ -902,15 +905,21 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
       }
     }
 
+    // Construct file path
     const basePath = path.join("/data/uploads/private/videos", videoId);
     const filePath = path.join(basePath, file);
 
-    // Path traversal protection
-    if (!filePath.startsWith(basePath)) {
+    // Enhanced path traversal protection
+    const normalizedFilePath = path.normalize(filePath);
+    const normalizedBasePath = path.normalize(basePath);
+    
+    if (!normalizedFilePath.startsWith(normalizedBasePath + path.sep) && 
+        normalizedFilePath !== normalizedBasePath) {
       console.error("Path traversal attempt:", filePath);
       return res.status(403).end("Invalid path");
     }
 
+    // Check file exists
     if (!fs.existsSync(filePath)) {
       console.error(`File not found: ${filePath}`);
       return res.status(404).end("File not found");
@@ -920,37 +929,48 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     if (file.endsWith(".m3u8")) {
       let playlist = fs.readFileSync(filePath, "utf8");
 
-      // Debug log
-      if (file === "master.m3u8") {
-        console.log("✅ Serving master playlist successfully");
-      }
+      console.log(`Serving playlist: ${file}`);
 
       if (!isPublic && token) {
-        // Rewrite .ts segment URLs
-        playlist = playlist.replace(/(seg_\d+\.ts)/g, `$1?token=${token}`);
-
-        // Rewrite variant playlist URLs (720p/index.m3u8, 1080p/index.m3u8)
-        playlist = playlist.replace(
-          /(720p\/index\.m3u8|1080p\/index\.m3u8)/g,
-          `$1?token=${token}`,
-        );
+        // For master playlist, rewrite variant playlist URLs
+        if (file === "master.m3u8") {
+          playlist = playlist.replace(
+            /^(720p\/index\.m3u8|1080p\/index\.m3u8)$/gm,
+            `$1?token=${token}`
+          );
+        } else {
+          // For variant playlists (720p/index.m3u8, 1080p/index.m3u8)
+          // Rewrite .ts segment URLs (they're in the same directory)
+          playlist = playlist.replace(
+            /^(seg_\d+\.ts)$/gm,
+            `$1?token=${token}`
+          );
+        }
 
         // Rewrite encryption key URI if present
         playlist = playlist.replace(
-          /(URI=")([^"]+)(")/g,
-          (match, p1, uri, p3) => `${p1}${uri}?token=${token}${p3}`,
+          /URI="([^"]+)"/g,
+          (match, uri) => {
+            // If the URI doesn't already have a token, add it
+            if (!uri.includes('token=')) {
+              return `URI="${uri}${uri.includes('?') ? '&' : '?'}token=${token}"`;
+            }
+            return match;
+          }
         );
       }
 
       res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.setHeader("Access-Control-Allow-Origin", "*");
       return res.send(playlist);
     }
 
     // Handle .ts segments
     if (file.endsWith(".ts")) {
       res.setHeader("Content-Type", "video/mp2t");
-      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+      res.setHeader("Access-Control-Allow-Origin", "*");
       return fs.createReadStream(filePath).pipe(res);
     }
 
