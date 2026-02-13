@@ -27,11 +27,8 @@ const usersCollection = db?.collection("users");
 const orderCollection = db?.collection("orders");
 const appointmentReviewCollection = db?.collection("appointment-reviews");
 
-
-
-
 // ============================================
-// CORS Preflight Handlers 
+// CORS Preflight Handlers
 // ============================================
 router.options("/course/stream/:courseId/:videoId/*", (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -46,7 +43,6 @@ router.options("/course/key/:videoId", (req, res) => {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   res.status(204).end();
 });
-
 
 router.put("/update-user-info", lowUserOnlyMiddleware, async (req, res) => {
   try {
@@ -878,7 +874,9 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
     const { token } = req.query;
 
     // ⭐ ADD THIS DEBUG LOG
-    console.log(`📹 Stream request: courseId=${courseId}, videoId=${videoId}, file=${file}, token=${token ? 'present ✅' : 'MISSING ❌'}`);
+    console.log(
+      `📹 Stream request: courseId=${courseId}, videoId=${videoId}, file=${file}, token=${token ? "present ✅" : "MISSING ❌"}`,
+    );
     console.log(`📹 Full URL: ${req.url}`);
     console.log(`📹 Query params:`, req.query);
     // Verify course exists
@@ -938,12 +936,13 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
         });
 
         if (!userHasAccess) {
-          console.error(`❌ User ${userId} does not have access to course ${courseId}`);
+          console.error(
+            `❌ User ${userId} does not have access to course ${courseId}`,
+          );
           return res.status(403).end("Access denied");
         }
 
         console.log(`✅ Token verified for user ${userId}`);
-
       } catch (err) {
         console.error("❌ Token verification error:", err);
         return res.status(403).end("Invalid token");
@@ -984,30 +983,38 @@ router.get("/course/stream/:courseId/:videoId/*", async (req, res) => {
           // Rewrite variant playlists
           playlist = playlist.replace(
             /^(720p\/index\.m3u8|1080p\/index\.m3u8)$/gm,
-            `$1?token=${token}`
+            `$1?token=${token}`,
           );
         } else {
           // For variant playlists (720p/index.m3u8, 1080p/index.m3u8)
           // Rewrite .ts segment URLs
-          playlist = playlist.replace(
-            /^(seg_\d+\.ts)$/gm,
-            `$1?token=${token}`
-          );
+          playlist = playlist.replace(/^(seg_\d+\.ts)$/gm, `$1?token=${token}`);
         }
 
         // ⭐ CRITICAL FIX: Rewrite encryption key URI
         // This regex handles both with and without quotes around the URI
+        // ⭐ FIXED: Rewrite encryption key URI (with IV parameter support)
         playlist = playlist.replace(
-          /#EXT-X-KEY:METHOD=AES-128,URI="?([^"\n]+)"?/g,
-          (match, uri) => {
+          /#EXT-X-KEY:METHOD=AES-128,URI="([^"]+)"(,IV=[^,\n]+)?/g,
+          (match, uri, ivPart) => {
+            console.log("🔑 Found encryption key line");
+            console.log("🔑 URI:", uri);
+            console.log("🔑 IV:", ivPart);
+
             // Check if URI already has token
-            if (uri.includes('token=')) {
+            if (uri.includes("token=")) {
+              console.log("⚠️ Token already present");
               return match;
             }
+
             // Add token to URI
-            const separator = uri.includes('?') ? '&' : '?';
-            return `#EXT-X-KEY:METHOD=AES-128,URI="${uri}${separator}token=${token}"`;
-          }
+            const separator = uri.includes("?") ? "&" : "?";
+            const newUri = `${uri}${separator}token=${token}`;
+            const result = `#EXT-X-KEY:METHOD=AES-128,URI="${newUri}"${ivPart || ""}`;
+
+            console.log("✨ Rewritten to:", result);
+            return result;
+          },
         );
       }
 
@@ -1055,7 +1062,7 @@ router.get("/course/key/:videoId", async (req, res) => {
     try {
       const decoded = Buffer.from(token, "base64url").toString();
       const parts = decoded.split("|");
-      
+
       if (parts.length !== 4) {
         console.error("❌ Invalid token format");
         return res.status(403).end("Invalid token format");
@@ -1063,11 +1070,15 @@ router.get("/course/key/:videoId", async (req, res) => {
 
       [userId, courseId, tokenVideoId] = parts;
 
-      console.log(`Token decoded: userId=${userId}, courseId=${courseId}, videoId=${tokenVideoId}`);
+      console.log(
+        `Token decoded: userId=${userId}, courseId=${courseId}, videoId=${tokenVideoId}`,
+      );
 
       // Verify the videoId from URL matches the one in the token
       if (tokenVideoId !== videoId) {
-        console.error(`❌ VideoId mismatch: URL=${videoId}, Token=${tokenVideoId}`);
+        console.error(
+          `❌ VideoId mismatch: URL=${videoId}, Token=${tokenVideoId}`,
+        );
         return res.status(403).end("Invalid token");
       }
 
@@ -1076,7 +1087,6 @@ router.get("/course/key/:videoId", async (req, res) => {
         console.error("❌ Token verification failed");
         return res.status(403).end("Invalid token");
       }
-
     } catch (err) {
       console.error("❌ Token decode error:", err);
       return res.status(403).end("Invalid token format");
@@ -1089,7 +1099,9 @@ router.get("/course/key/:videoId", async (req, res) => {
     });
 
     if (!course) {
-      console.error(`❌ User ${userId} does not have access to course ${courseId}`);
+      console.error(
+        `❌ User ${userId} does not have access to course ${courseId}`,
+      );
       return res.status(403).end("Access denied");
     }
 
@@ -1114,7 +1126,7 @@ router.get("/course/key/:videoId", async (req, res) => {
     const keyPath = path.join(
       "/data/uploads/private/videos",
       videoId,
-      "key.key"
+      "key.key",
     );
 
     // Verify key file exists
@@ -1134,7 +1146,6 @@ router.get("/course/key/:videoId", async (req, res) => {
 
     // Stream the key file
     fs.createReadStream(keyPath).pipe(res);
-
   } catch (err) {
     console.error("❌ Key endpoint error:", err);
     res.status(500).end("Server error");
