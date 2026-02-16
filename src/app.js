@@ -100,7 +100,6 @@ const corsOptions = {
   origin: (origin, callback) => {
     const allowedOrigins = [
       "http://localhost:3000",
-      "http://localhost:5173", // Vite default
       "https://sukunlife.com",
       "https://www.sukunlife.com",
       "https://api.sukunlife.com", 
