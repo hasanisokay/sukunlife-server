@@ -1,11 +1,11 @@
 import nodemailer from "nodemailer";
 import express from "express";
 import crypto from "crypto";
-import dbConnect from "../config/db.mjs";
 import bcrypt from "bcrypt";
 import { v4 as uuidv4 } from "uuid";
 import jwt from "jsonwebtoken";
 const router = express.Router();
+import dbConnect from "../config/db.mjs";
 const db = await dbConnect();
 import cookie from "cookie";
 import dotenv from "dotenv";
