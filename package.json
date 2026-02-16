@@ -3,7 +3,15 @@
   "version": "1.0.0",
   "main": "index.mjs",
   "scripts": {
-    "start": "node index.mjs",
+    "start": "NODE_ENV=production node index.mjs",
+    "dev": "NODE_ENV=development nodemon index.mjs",
+    "pm2:start": "pm2 start ecosystem.config.js --env production",
+    "pm2:dev": "pm2 start ecosystem.config.js --env development",
+    "pm2:restart": "pm2 restart sukunlife-server",
+    "pm2:stop": "pm2 stop sukunlife-server",
+    "pm2:delete": "pm2 delete sukunlife-server",
+    "pm2:logs": "pm2 logs sukunlife-server",
+    "pm2:monit": "pm2 monit",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -12,18 +20,25 @@
   "description": "",
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.4.7",
     "ejs": "^4.0.1",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "mime-types": "^3.0.2",
     "mongodb": "^6.12.0",
+    "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "nodemailer": "^6.10.0",
     "puppeteer": "^24.36.0",
     "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
   },
   "type": "module"
 }
