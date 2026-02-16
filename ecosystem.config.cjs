@@ -2,7 +2,7 @@ module.exports = {
   apps: [{
     name: 'sukunlife-server',
     script: './index.mjs',
-    instances: 2, // Use 2 CPU cores (adjust based on your server)
+   instances: 'max',
     exec_mode: 'cluster',
     
     // Environment variables

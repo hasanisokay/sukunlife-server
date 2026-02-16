@@ -22,5 +22,6 @@ jobs:
           script: |
             cd ${{ secrets.SERVER_PATH }}
             git pull origin main
-            npm install --production
-            pm2 restart sukunlife-server
+            npm ci --omit=dev
+            pm2 reload ecosystem.config.cjs --env production
+            pm2 save
