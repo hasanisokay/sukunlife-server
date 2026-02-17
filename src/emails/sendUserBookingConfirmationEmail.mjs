@@ -1,8 +1,5 @@
-import {
-  capitalize,
-  convertTo12Hour,
-  formatDateWithOrdinal,
-} from "./convertDateToDateObject.mjs";
+import { capitalize, convertTo12Hour, formatDateWithOrdinal } from "../utils/convertDateToDateObject.mjs";
+
 
 const sendUserBookingConfirmationEmail = async (bookingData, transporter) => {
 const generateUserEmailHTML = (bookingData) => {

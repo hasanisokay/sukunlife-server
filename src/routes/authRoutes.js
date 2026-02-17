@@ -1,4 +1,3 @@
-import nodemailer from "nodemailer";
 import express from "express";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
@@ -18,22 +17,13 @@ import {
   REFRESH_EXPIRATION,
   REFRESH_SECRET_KEY,
 } from "../constants/names.mjs";
-import sendOtpEmailToUser from "../utils/sendOtpEmailToUser.mjs";
+import { addEmailJob } from "../queues/emailQueue.mjs";
 
 dotenv.config();
 const usersCollection = db?.collection("users");
 const otpCollection = db?.collection("otps");
 const sessionsCollection = db?.collection("sessions");
 
-let transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_SERVICE_HOST,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_ID,
-    pass: process.env.EMAIL_PASS,
-  },
-});
 
 // Login
 router.post("/login", async (req, res) => {
@@ -235,22 +225,16 @@ router.post("/request-otp", async (req, res) => {
       createdAt: new Date(),
       expiresAt: new Date(Date.now() + 30 * 60 * 1000), // OTP valid for 30 minutes
     });
-    // to, name, otp, transporter
-    const isEmailSend = await sendOtpEmailToUser(
-      user.email,
-      user?.name,
-      otp,
-      transporter,
-    );
-    if (isEmailSend.status === 200) {
-      return res
-        .status(200)
-        .json({ message: "OTP sent successfully.", status: 200 });
-    } else {
-      return res
-        .status(400)
-        .json({ message: "Try again after few hours.", status: 400 });
-    }
+    const dataToSend = { to: user.email, name: user?.name, otp };
+    await addEmailJob("password-reset", dataToSend, {
+      priority: 1, 
+    });
+
+    // await sendOtpEmailToUser(user.email, user?.name, otp, transporter);
+
+    return res
+      .status(200)
+      .json({ message: "OTP sent successfully.", status: 200 });
   } catch (error) {
     return res.status(500).json({ message: "Server error", error });
   }

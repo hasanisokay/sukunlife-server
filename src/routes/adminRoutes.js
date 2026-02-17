@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { addJob, videoJobs } from "../queue/hlsQueue.js";
-
+import { addVideoJob, getVideoJob } from '../queues/index.mjs';
 import lowAdminMiddleware from "../middlewares/lowAdminMiddleware.js";
 import strictAdminMiddleware from "../middlewares/strictAdminMiddleware.js";
 import dbConnect from "../config/db.mjs";
@@ -2045,171 +2045,106 @@ router.delete(
 );
 
 router.get("/course/video-status/:videoId", async (req, res) => {
-  const { videoId } = req.params;
-  const job = videoJobs[videoId];
+  try {
+    const { videoId } = req.params;
+    const job = await getVideoJob(videoId);
 
-  if (!job) {
-    return res.status(404).json({
-      status: "not_found",
-      error: "Video processing job not found",
-      message: "The video processing job may have been completed or cleared",
-    });
-  }
-
-  const now = Date.now();
-
-  // For queued jobs
-  if (job.status === "queued") {
-    const queuedJobs = Object.keys(videoJobs)
-      .filter((id) => videoJobs[id].status === "queued")
-      .sort(
-        (a, b) => (videoJobs[a].queueTime || 0) - (videoJobs[b].queueTime || 0),
-      );
-
-    const queuePosition = queuedJobs.indexOf(videoId) + 1;
-    const waitTime = job.queueTime
-      ? Math.round((now - job.queueTime) / 1000)
-      : 0;
-
-    return res.json({
-      status: "queued",
-      percent: 0,
-      eta: "waiting...",
-      queuePosition,
-      totalInQueue: queuedJobs.length,
-      waitTime,
-      message: `Waiting in queue (position ${queuePosition} of ${queuedJobs.length})`,
-      queuedAt: job.queueTime,
-    });
-  }
-
-  // For processing jobs
-  if (job.status === "processing") {
-    const processingTime = job.startTime ? (now - job.startTime) / 1000 : 0;
-
-    // Calculate more accurate ETA
-    let eta = job.eta || "calculating...";
-    let etaSeconds = null;
-
-    if (job.percent > 0 && job.percent < 100 && job.startTime) {
-      const elapsedSeconds = processingTime;
-      const progressFraction = job.percent / 100;
-
-      if (progressFraction > 0 && elapsedSeconds > 0) {
-        // Method 1: Based on current speed
-        if (job.speed && job.duration) {
-          const remainingTime =
-            (job.duration - (job.currentTime || 0)) / job.speed;
-          etaSeconds = Math.max(0, Math.round(remainingTime));
-          eta = formatTime(etaSeconds);
-        }
-        // Method 2: Based on percentage progression
-        else {
-          const estimatedTotal = elapsedSeconds / progressFraction;
-          const remaining = Math.max(0, estimatedTotal - elapsedSeconds);
-          etaSeconds = Math.round(remaining);
-          eta = formatTime(etaSeconds);
-        }
-      }
+    if (!job) {
+      return res.status(404).json({
+        status: "not_found",
+        error: "Video processing job not found",
+        message: "The video processing job may have been completed or cleared",
+      });
     }
 
-    // Add processing speed
-    let speed = null;
-    if (job.speed) {
-      speed = `${job.speed.toFixed(2)}x`;
-    } else if (job.ffmpegSpeed) {
-      speed = `${job.ffmpegSpeed.toFixed(2)}x`;
+    const state = await job.getState();
+    const progress = job.progress || {};
+    const now = Date.now();
+
+    // Waiting/Delayed
+    if (state === 'waiting' || state === 'delayed') {
+      const jobCounts = await job.queue.getJobCounts('waiting', 'delayed', 'active');
+      const queuePosition = (jobCounts.waiting || 0) + (jobCounts.delayed || 0);
+      const waitTime = job.timestamp ? Math.round((now - job.timestamp) / 1000) : 0;
+
+      return res.json({
+        status: "queued",
+        percent: 0,
+        eta: "waiting...",
+        queuePosition: queuePosition + 1,
+        totalInQueue: queuePosition + (jobCounts.active || 0),
+        waitTime,
+        message: `Waiting in queue`,
+        queuedAt: job.timestamp,
+      });
     }
 
-    return res.json({
-      status: "processing",
-      percent: job.percent,
-      eta: eta,
-      etaSeconds: etaSeconds,
-      speed: speed,
-      duration: job.duration || 0,
-      processingTime: Math.round(processingTime),
-      currentStep: job.currentStep || "Transcoding video",
-      startTime: job.startTime,
-      currentTime: job.currentTime || 0,
-      totalDuration: job.duration || 0,
+    // Active/Processing
+    if (state === 'active') {
+      const processingTime = job.processedOn ? (now - job.processedOn) / 1000 : 0;
+
+      return res.json({
+        status: "processing",
+        percent: progress.percent || 0,
+        eta: progress.eta || "calculating...",
+        etaSeconds: progress.etaSeconds || null,
+        speed: progress.speed || progress.ffmpegSpeed || null,
+        duration: progress.duration || 0,
+        processingTime: Math.round(processingTime),
+        currentStep: progress.currentStep || "Transcoding video",
+        startTime: job.processedOn,
+        currentTime: progress.currentTime || 0,
+        totalDuration: progress.duration || 0,
+      });
+    }
+
+    // Completed
+    if (state === 'completed') {
+      const result = job.returnvalue || {};
+      const processingTime = result.processingTime || 
+        (job.finishedOn && job.processedOn ? (job.finishedOn - job.processedOn) / 1000 : 0);
+
+      return res.json({
+        status: "completed",
+        percent: 100,
+        eta: "0s",
+        duration: result.duration || 0,
+        processingTime: Math.round(processingTime),
+        totalTime: Math.round(processingTime),
+        resolutions: result.resolutions || ['720p', '1080p'],
+        message: "Video processing completed successfully",
+        completedAt: job.finishedOn,
+      });
+    }
+
+    // Failed
+    if (state === 'failed') {
+      const processingTime = job.processedOn ? (now - job.processedOn) / 1000 : 0;
+
+      return res.json({
+        status: "failed",
+        percent: progress.percent || 0,
+        error: job.failedReason || "Video processing failed",
+        processingTime: Math.round(processingTime),
+        failedAt: job.finishedOn,
+        attemptsMade: job.attemptsMade,
+        attemptsMax: job.opts.attempts,
+      });
+    }
+
+    // Default
+    res.json({
+      status: state || "unknown",
+      percent: progress.percent || 0,
+      message: `Job is in ${state} state`,
     });
+  } catch (error) {
+    console.error('Status check error:', error);
+    res.status(500).json({ error: 'Failed to get status', message: error.message });
   }
-
-  // For completed jobs
-  if (job.status === "completed" || job.status === "ready") {
-    const processingTime =
-      job.totalProcessingTime ||
-      (job.completedAt && job.startTime
-        ? (job.completedAt - job.startTime) / 1000
-        : 0);
-
-    return res.json({
-      status: "completed",
-      percent: 100,
-      eta: "0s",
-      duration: job.duration || 0,
-      processingTime: Math.round(processingTime),
-      totalTime: Math.round(processingTime),
-      resolutions: job.resolutions || [],
-      message: "Video processing completed successfully",
-      completedAt: job.completedAt,
-    });
-  }
-
-  // For failed jobs
-  if (job.status === "failed") {
-    const processingTime = job.startTime ? (now - job.startTime) / 1000 : 0;
-
-    return res.json({
-      status: "failed",
-      percent: job.percent || 0,
-      error: job.error || "Video processing failed",
-      processingTime: Math.round(processingTime),
-      failedAt: job.failedAt,
-    });
-  }
-
-  // For cancelled jobs
-  if (job.status === "cancelled") {
-    return res.json({
-      status: "cancelled",
-      percent: job.percent || 0,
-      message: "Video processing was cancelled",
-      cancelledAt: job.cancelledAt,
-    });
-  }
-
-  // Default response
-  res.json({
-    status: job.status || "unknown",
-    percent: job.percent || 0,
-    message: job.message || "Processing status",
-  });
 });
 
-function formatTime(sec) {
-  if (!sec || sec < 0 || !isFinite(sec)) return "calculating...";
 
-  if (sec < 60) {
-    return `${Math.round(sec)}s`;
-  } else if (sec < 3600) {
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return s > 0 ? `${m}m ${s}s` : `${m}m`;
-  } else {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = Math.floor(sec % 60);
-    if (m > 0 && s > 0) {
-      return `${h}h ${m}m ${s}s`;
-    } else if (m > 0) {
-      return `${h}h ${m}m`;
-    } else {
-      return `${h}h`;
-    }
-  }
-}
 router.post(
   "/course/upload",
   strictAdminMiddleware,
@@ -2280,23 +2215,30 @@ ${hlsKeyArgs} \
 "${baseDir}/%v/index.m3u8"
 `;
 
-    videoJobs[videoId] = { status: "queued", percent: 0 };
+    // videoJobs[videoId] = { status: "queued", percent: 0 };
 
-    addJob(videoId, cmd, async () => {
-      // Clean up original file after encoding
-      fs.promises.unlink(inputPath).catch(console.error);
+    // addJob(videoId, cmd, async () => {
+    //   // Clean up original file after encoding
+    //   fs.promises.unlink(inputPath).catch(console.error);
 
-      // Log success
-      console.log(`Video ${videoId} processing completed`);
+    //   // Log success
+    //   console.log(`Video ${videoId} processing completed`);
 
-      // Verify master playlist exists
-      const masterPath = path.join(baseDir, "master.m3u8");
-      if (fs.existsSync(masterPath)) {
-        const content = fs.readFileSync(masterPath, "utf8");
-        console.log("Final master playlist:", content);
-      }
-    });
-
+    //   // Verify master playlist exists
+    //   const masterPath = path.join(baseDir, "master.m3u8");
+    //   if (fs.existsSync(masterPath)) {
+    //     const content = fs.readFileSync(masterPath, "utf8");
+    //     console.log("Final master playlist:", content);
+    //   }
+    // });
+   await addVideoJob(videoId, {
+        videoId,
+        cmd,
+        inputPath,
+        baseDir,
+        status,
+      });
+    
     res.json({
       message: "Video uploaded. Processing started.",
       videoId,

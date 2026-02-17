@@ -3,17 +3,9 @@ import dbConnect from "../config/db.mjs";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { ObjectId } from "mongodb";
-import convertDateToDateObject, {
-  capitalize,
-  convertISODateToDateObject,
-  convertTo12Hour,
-  formatDateWithOrdinal,
-} from "../utils/convertDateToDateObject.mjs";
-import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
-import nodemailer from "nodemailer";
+import { convertISODateToDateObject } from "../utils/convertDateToDateObject.mjs";
 import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
-import { generateInvoicePDF } from "../utils/generateInvoicePDF.js";
-import { generateInvoiceHTML } from "../utils/generateInvoiceHTML.js";
+import { addEmailJob } from "../queues/emailQueue.mjs";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -28,16 +20,6 @@ const resourceCollection = db?.collection("resources");
 const usersCollection = db?.collection("users");
 
 const CLIENT_URL = process.env.CLIENT_URL;
-let transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_SERVICE_HOST,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_ID,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
 const PAYSTATION_URL = "https://api.paystation.com.bd";
 
 function getInvoicePrefix(source) {
@@ -369,8 +351,8 @@ router.post("/finalize-payment", async (req, res) => {
     } else if (payment.source === "shop") {
       const orderResult = await createOrder(payment);
       Promise.all([
-        sendAdminOrderNotificationEmail(orderResult.order, transporter),
-        sendUserOrderInvoiceEmail(orderResult.order, transporter),
+        await addEmailJob("admin-order-notification", orderResult.order),
+        await addEmailJob("user-order-invoice", orderResult.order),
       ]).catch(console.error);
     }
 
@@ -416,10 +398,15 @@ const createAppointment = async (
         },
       );
 
+      // Promise.all([
+      //   sendAdminBookingConfirmationEmail(appointment, transporter),
+      //   sendUserPaymentConfirmationEmail(emailSendingDetails, transporter),
+      // ]).catch(console.error);
+
       Promise.all([
-        sendAdminBookingConfirmationEmail(appointment, transporter),
-        sendUserPaymentConfirmationEmail(emailSendingDetails, transporter),
-      ]).catch(console.error);
+        addEmailJob("admin-booking-confirmation", appointment),
+        addEmailJob("user-booking-payment-confirmation", emailSendingDetails),
+      ]);
     } catch (e) {
       console.log("sending admin email failed", e);
     }
@@ -432,284 +419,6 @@ const createAppointment = async (
     throw error;
   }
 };
-// async function sendUserPaymentConfirmationEmail(payment, transporter) {
-//   const subject = "Your Appointment is Confirmed";
-
-//   const safe = (v = "") =>
-//     String(v).replace(
-//       /[&<>"']/g,
-//       (s) =>
-//         ({
-//           "&": "&amp;",
-//           "<": "&lt;",
-//           ">": "&gt;",
-//           '"': "&quot;",
-//           "'": "&#39;",
-//         })[s],
-//     );
-
-//   const html = `
-//     <h2>Payment Successful</h2>
-
-//     <p>Thank you, ${safe(payment.customer.name)}.</p>
-//     <p>Your payment has been successfully received.</p>
-
-//     <p><strong>Invoice:</strong> ${payment.invoice}</p>
-//     <p><strong>Amount:</strong> ${payment.amount} BDT</p>
-//     <p><strong>Payment Method:</strong> ${payment.payment_method}</p>
-//     <p><strong>Transaction ID:</strong> ${payment.trx_id}</p>
-//     <p><strong>Service:</strong> ${capitalize(payment?.payload?.service)}</p>
-//     <p><strong>Appointment Date:</strong> ${formatDateWithOrdinal(payment?.payload?.date)}</p>
-//     <p><strong>Start Time:</strong> ${convertTo12Hour(payment?.payload?.startTime)}</p>
-//     <p><strong>End Time:</strong> ${convertTo12Hour(payment?.payload?.endTime)}</p>
-//     <p><strong>Consultant:</strong> ${payment?.payload?.consultant}</p>
-
-//     <hr />
-
-//     <p>Your appointment has been booked successfully.</p>
-    
-//     <p>
-//       <a href=${process.env.SERVER_URL}/api/paystation/invoice/${payment.invoice}">
-//         View / Print Invoice
-//       </a>
-//     </p>
-
-//     <p>You can keep this email for your records.</p>
-//   `;
-
-//   try {
-//     await transporter.sendMail({
-//       from: `"SukunLife" <${process.env.EMAIL_ID}>`,
-//       to: payment.customer.email,
-//       subject,
-//       html,
-//       text: `Payment successful.
-// Invoice: ${payment.invoice}
-// Amount: ${payment.amount} BDT`,
-//     });
-//   } catch (err) {
-//     console.error("User confirmation email failed:", err);
-//   }
-// }
-
-//changed email template, yet to test
-
-
-async function sendUserPaymentConfirmationEmail(payment, transporter) {
-  const subject = "Payment Successful – SukunLife";
-
-  const safe = (v = "") =>
-    String(v).replace(
-      /[&<>"']/g,
-      (s) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[s]
-    );
-
-  const {
-    invoice,
-    amount,
-    payment_method,
-    trx_id,
-    customer,
-    payload,
-  } = payment;
-
-  const service =
-    payload?.service === "emergency-ruqyah"
-      ? "Emergency Ruqyah"
-      : capitalize(payload?.service);
-
-  const invoiceUrl = `${process.env.SERVER_URL}/api/paystation/invoice/${invoice}`;
-
-  const html = `
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Payment Confirmation</title>
-</head>
-
-<body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
-
-<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
-<tr>
-<td align="center">
-
-<table width="600" cellpadding="0" cellspacing="0"
-style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.06);">
-
-  <!-- Header -->
-  <tr>
-    <td align="center" style="padding:30px 20px 10px 20px;">
-      <img src="https://sukunlife.github.io/audio/logo.jpg"
-           alt="SukunLife Logo"
-           width="180"
-           style="display:block;margin-bottom:10px;border-radius:6px;" />
-    </td>
-  </tr>
-
-  <tr>
-    <td style="padding:0 40px 20px 40px;">
-      <div style="
-        background:#ecfdf5;
-        border:1px solid #10b981;
-        padding:14px 18px;
-        border-radius:8px;
-        font-size:14px;
-        color:#065f46;
-        text-align:center;">
-        <strong>Payment Successful</strong>
-      </div>
-    </td>
-  </tr>
-
-  <!-- Body -->
-  <tr>
-    <td style="padding:10px 40px 30px 40px;color:#374151;font-size:15px;line-height:1.7;">
-
-      <p>Hi <strong>${safe(customer?.name)}</strong>,</p>
-
-      <p>
-        We have successfully received your payment. 
-        Your appointment is now fully confirmed.
-      </p>
-
-      <!-- Payment Details -->
-      <table width="100%" cellpadding="0" cellspacing="0"
-        style="margin:25px 0;border:1px solid #e5e7eb;border-radius:10px;background:#fafafa;padding:20px;">
-
-        <tr>
-          <td style="padding:6px 0;"><strong>Invoice:</strong></td>
-          <td style="padding:6px 0;text-align:right;">${safe(invoice)}</td>
-        </tr>
-
-        <tr>
-          <td style="padding:6px 0;"><strong>Amount:</strong></td>
-          <td style="padding:6px 0;text-align:right;">
-            ${safe(amount)} BDT
-          </td>
-        </tr>
-
-        <tr>
-          <td style="padding:6px 0;"><strong>Payment Method:</strong></td>
-          <td style="padding:6px 0;text-align:right;">
-            ${safe(payment_method)}
-          </td>
-        </tr>
-
-        <tr>
-          <td style="padding:6px 0;"><strong>Transaction ID:</strong></td>
-          <td style="padding:6px 0;text-align:right;">
-            ${safe(trx_id)}
-          </td>
-        </tr>
-
-      </table>
-
-      <!-- Appointment Details -->
-      <h3 style="margin-bottom:10px;color:#111827;">Appointment Summary</h3>
-
-      <table width="100%" cellpadding="0" cellspacing="0"
-        style="margin:15px 0 25px 0;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;padding:20px;">
-
-        <tr>
-          <td style="padding:6px 0;"><strong>Service:</strong></td>
-          <td style="padding:6px 0;text-align:right;">${safe(service)}</td>
-        </tr>
-
-        <tr>
-          <td style="padding:6px 0;"><strong>Date:</strong></td>
-          <td style="padding:6px 0;text-align:right;">
-            ${formatDateWithOrdinal(payload?.date)}
-          </td>
-        </tr>
-
-        <tr>
-          <td style="padding:6px 0;"><strong>Time:</strong></td>
-          <td style="padding:6px 0;text-align:right;">
-            ${convertTo12Hour(payload?.startTime)} –
-            ${convertTo12Hour(payload?.endTime)}
-          </td>
-        </tr>
-
-        <tr>
-          <td style="padding:6px 0;"><strong>Consultant:</strong></td>
-          <td style="padding:6px 0;text-align:right;">
-            ${safe(payload?.consultant || "To be assigned")}
-          </td>
-        </tr>
-
-      </table>
-
-      <!-- Invoice Button -->
-      <div style="text-align:center;margin:30px 0;">
-        <a href="${invoiceUrl}"
-           target="_blank"
-           style="background:#111827;color:#ffffff;text-decoration:none;
-           padding:12px 24px;border-radius:6px;
-           font-weight:bold;display:inline-block;">
-           View / Download Invoice
-        </a>
-      </div>
-
-      <p>
-        Please keep this email for your records.
-      </p>
-
-      <p>
-        Warm regards,<br/>
-        <strong>SukunLife Team</strong>
-      </p>
-
-    </td>
-  </tr>
-
-  <!-- Footer -->
-  <tr>
-    <td align="center"
-        style="background:#f9fafb;padding:20px;font-size:13px;color:#6b7280;">
-      © 2026 SukunLife BD. All rights reserved.<br/>
-      This is an automated confirmation email.
-    </td>
-  </tr>
-
-</table>
-
-</td>
-</tr>
-</table>
-
-</body>
-</html>
-`;
-
-  try {
-    await transporter.sendMail({
-      from: `"SukunLife" <${process.env.EMAIL_ID}>`,
-      to: customer.email,
-      subject,
-      html,
-      text: `Payment Successful
-
-Invoice: ${invoice}
-Amount: ${amount} BDT
-Transaction ID: ${trx_id}
-
-Your appointment is confirmed.
-
-– SukunLife`,
-    });
-  } catch (err) {
-    console.error("User confirmation email failed:", err);
-  }
-}
 
 router.get("/invoice/:invoice", userCheckerMiddleware, async (req, res) => {
   try {
@@ -798,101 +507,101 @@ const createOrder = async (payment) => {
   return { order };
 };
 
-async function sendAdminOrderNotificationEmail(order, transporter) {
-  const renderVariant = (variant, unit) => {
-    const parts = [];
-    if (variant?.size) parts.push(`Size: ${variant.size}`);
-    if (variant?.color) parts.push(`Color: ${variant.color}`);
-    if (unit) parts.push(`Unit: ${unit}`);
-    return parts.length ? ` (${parts.join(", ")})` : "";
-  };
+// async function sendAdminOrderNotificationEmail(order, transporter) {
+//   const renderVariant = (variant, unit) => {
+//     const parts = [];
+//     if (variant?.size) parts.push(`Size: ${variant.size}`);
+//     if (variant?.color) parts.push(`Color: ${variant.color}`);
+//     if (unit) parts.push(`Unit: ${unit}`);
+//     return parts.length ? ` (${parts.join(", ")})` : "";
+//   };
 
-  const itemsHtml = order.items
-    .map(
-      (i) => `
-    <li>
-  <strong>${i.title}</strong><br/>
-  Quantity: ${i.quantity}${i.unit ? ` ${i.unit}` : ""}<br/>
-  Unit Price: ${i.price} BDT<br/>
-  ${renderVariant(i.variant, i.unit)}
-</li>
-      `,
-    )
-    .join("");
+//   const itemsHtml = order.items
+//     .map(
+//       (i) => `
+//     <li>
+//   <strong>${i.title}</strong><br/>
+//   Quantity: ${i.quantity}${i.unit ? ` ${i.unit}` : ""}<br/>
+//   Unit Price: ${i.price} BDT<br/>
+//   ${renderVariant(i.variant, i.unit)}
+// </li>
+//       `,
+//     )
+//     .join("");
 
-  const html = `
-    <h2>🛒 New Shop Order Received</h2>
+//   const html = `
+//     <h2>🛒 New Shop Order Received</h2>
 
-    <p><strong>Invoice:</strong> ${order.invoice}</p>
-    <p><strong>Total Amount:</strong> ${order.totalAmount} BDT</p>
+//     <p><strong>Invoice:</strong> ${order.invoice}</p>
+//     <p><strong>Total Amount:</strong> ${order.totalAmount} BDT</p>
 
-    <hr/>
+//     <hr/>
 
-    <h3>Customer Details</h3>
-    <p>
-      Name: ${order.customer.name}<br/>
-      Phone: ${order.customer.mobile}<br/>
-      Email: ${order.customer.email}<br/>
-      Address: ${order.customer.address}
-    </p>
+//     <h3>Customer Details</h3>
+//     <p>
+//       Name: ${order.customer.name}<br/>
+//       Phone: ${order.customer.mobile}<br/>
+//       Email: ${order.customer.email}<br/>
+//       Address: ${order.customer.address}
+//     </p>
 
-    <hr/>
+//     <hr/>
 
-    <h3>Payment Details</h3>
-    <p>
-      Method: ${order.paymentMethod}<br/>
-      Transaction ID: ${order.trx_id}
-    </p>
+//     <h3>Payment Details</h3>
+//     <p>
+//       Method: ${order.paymentMethod}<br/>
+//       Transaction ID: ${order.trx_id}
+//     </p>
 
-    <hr/>
+//     <hr/>
 
-    <h3>Ordered Items</h3>
-    <ul>
-      ${itemsHtml}
-    </ul>
+//     <h3>Ordered Items</h3>
+//     <ul>
+//       ${itemsHtml}
+//     </ul>
 
-    <p><strong>Delivery Charge:</strong> ${order.deliveryCharge || 0} BDT</p>
+//     <p><strong>Delivery Charge:</strong> ${order.deliveryCharge || 0} BDT</p>
 
-    ${
-      order.voucher
-        ? `<p><strong>Voucher:</strong> ${order.voucher.code} (-${order.voucher.discount} BDT)</p>`
-        : ""
-    }
+//     ${
+//       order.voucher
+//         ? `<p><strong>Voucher:</strong> ${order.voucher.code} (-${order.voucher.discount} BDT)</p>`
+//         : ""
+//     }
 
-    <p><em>Order placed at ${new Date(order.orderedAt).toLocaleString()}</em></p>
-  `;
+//     <p><em>Order placed at ${new Date(order.orderedAt).toLocaleString()}</em></p>
+//   `;
 
-  await transporter.sendMail({
-    from: '"SukunLife" <no-reply@sukunlife.com>',
-    to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
-    subject: "🛒 New Shop Order Received",
-    html,
-  });
-}
-async function sendUserOrderInvoiceEmail(order, transporter) {
-  const html = generateInvoiceHTML(order);
-  const pdfBuffer = await generateInvoicePDF(html);
-  await transporter.sendMail({
-    from: '"SukunLife" <no-reply@sukunlife.com>',
-    to: order.customer.email,
-    subject: "🧾 Your Order Invoice - SukunLife",
-    html: `
-      <p>Hello <strong>${order.customer.name}</strong>,</p>
-      <p>Your invoice is attached as a PDF.</p>
-      <p>
-        <a href="${process.env.SERVER_URL}/api/paystation/invoice/${order.invoice}">
-          View invoice online
-        </a>
-      </p>
-    `,
-    attachments: [
-      {
-        filename: `invoice-${order.invoice}.pdf`,
-        content: pdfBuffer,
-        contentType: "application/pdf",
-      },
-    ],
-  });
-}
+//   await transporter.sendMail({
+//     from: '"SukunLife" <no-reply@sukunlife.com>',
+//     to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
+//     subject: "🛒 New Shop Order Received",
+//     html,
+//   });
+// }
+// async function sendUserOrderInvoiceEmail(order, transporter) {
+//   const html = generateInvoiceHTML(order);
+//   const pdfBuffer = await generateInvoicePDF(html);
+//   await transporter.sendMail({
+//     from: '"SukunLife" <no-reply@sukunlife.com>',
+//     to: order.customer.email,
+//     subject: "🧾 Your Order Invoice - SukunLife",
+//     html: `
+//       <p>Hello <strong>${order.customer.name}</strong>,</p>
+//       <p>Your invoice is attached as a PDF.</p>
+//       <p>
+//         <a href="${process.env.SERVER_URL}/api/paystation/invoice/${order.invoice}">
+//           View invoice online
+//         </a>
+//       </p>
+//     `,
+//     attachments: [
+//       {
+//         filename: `invoice-${order.invoice}.pdf`,
+//         content: pdfBuffer,
+//         contentType: "application/pdf",
+//       },
+//     ],
+//   });
+// }
 
 export default router;

@@ -3,22 +3,43 @@ import dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
-import rateLimit from "express-rate-limit";
+import IORedis from "ioredis";
+import { RateLimiterRedis } from "rate-limiter-flexible";
 import morgan from "morgan";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import publicRoutes from "./routes/publicRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import paystationRoutes from "./routes/paystationRoutes.js";
+import { redisConnection } from "./config/redis.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config();
+
+
+const redisClient = new IORedis(redisConnection);
+
+/*
+|--------------------------------------------------------------------------
+| Base Sliding Window Limiter
+|--------------------------------------------------------------------------
+*/
+
+const createLimiter = ({ prefix, points, duration, blockDuration }) =>
+  new RateLimiterRedis({
+    storeClient: redisClient,
+    keyPrefix: `rl:${prefix}`,
+    points,
+    duration,
+    blockDuration,
+  });
+
+
 
 const app = express();
 
@@ -27,7 +48,8 @@ const app = express();
 // ============================================================================
 // This allows Express to trust X-Forwarded-* headers from Nginx
 // Without this, req.ip will be 127.0.0.1 and rate limiting won't work
-app.set('trust proxy', 1);
+app.set('trust proxy', 2);
+// app.set('trust proxy', true);
 
 // ============================================================================
 // SECURITY HEADERS - HELMET
@@ -136,62 +158,80 @@ app.use((req, res, next) => {
 
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ============================================================================
-// RATE LIMITING - Different limits based on subdomain
-// ============================================================================
+// ================
+// RATE LIMITING 
+// ================
 
-// General API rate limiter (100 requests per 15 minutes)
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true, // Return rate limit info in RateLimit-* headers
-  legacyHeaders: false, // Disable X-RateLimit-* headers
-  message: { 
-    message: 'Too many requests from this IP, please try again later.', 
-    status: 429,
-    retryAfter: 15 * 60 // seconds
-  },
-  skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/health' || req.path === '/';
-  }
+const apiLimiter = createLimiter({
+  prefix: "api",
+  points: 100,
+  duration: 900,
+  blockDuration: 60,
 });
 
-// Upload subdomain rate limiter (20 uploads per hour)
-const uploadLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 20, // Only 20 large file uploads per hour per IP
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { 
-    message: 'Upload limit exceeded. Maximum 20 uploads per hour.', 
-    status: 429,
-    retryAfter: 60 * 60 // seconds
-  }
+const authLimiter = createLimiter({
+  prefix: "auth",
+  points: 5,
+  duration: 900,
+  blockDuration: 600,
 });
 
-// Auth endpoints rate limiter (5 attempts per 15 minutes)
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 failed requests per windowMs
-  skipSuccessfulRequests: true, // Don't count successful logins
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { 
-    message: 'Too many authentication attempts, please try again later.', 
-    status: 429,
-    retryAfter: 15 * 60 // seconds
-  }
+const adminLimiter = createLimiter({
+  prefix: "admin",
+  points: 50,
+  duration: 900,
+  blockDuration: 300,
 });
+
+const paymentLimiter = createLimiter({
+  prefix: "payment",
+  points: 20,
+  duration: 600,
+  blockDuration: 600,
+});
+
+const uploadLimiter = createLimiter({
+  prefix: "upload",
+  points: 20,
+  duration: 3600,
+  blockDuration: 1800,
+});
+
+
+const rateLimitMiddleware = (limiter) => {
+  return async (req, res, next) => {
+    try {
+      await limiter.consume(req.ip);
+      return next();
+    } catch (rejRes) {
+      if (rejRes instanceof Error) {
+        console.error("Rate limiter Redis error:", rejRes);
+        return next(); // fail open (do NOT block legit traffic)
+      }
+
+      const retrySecs = Math.round(rejRes.msBeforeNext / 1000) || 60;
+      res.set("Retry-After", retrySecs);
+
+      return res.status(429).json({
+        message: "Too many requests",
+        retryAfter: retrySecs,
+      });
+    }
+  };
+};
+
+
+
+
 
 // Apply rate limiters based on subdomain
 app.use((req, res, next) => {
-  if (req.hostname === 'upload.sukunlife.com') {
-    uploadLimiter(req, res, next);
-  } else {
-    apiLimiter(req, res, next);
+  if (req.hostname === "upload.sukunlife.com") {
+    return rateLimitMiddleware(uploadLimiter)(req, res, next);
   }
+  next();
 });
+
 
 // ============================================================================
 // STATIC FILES
@@ -232,11 +272,29 @@ app.get("/health", (req, res) => {
 // ============================================================================
 // API ROUTES
 // ============================================================================
-app.use("/api/auth", authLimiter, authRoutes);
-app.use("/api/paystation", paystationRoutes);
-app.use("/api/public", publicRoutes);
-app.use("/api/admin", adminRoutes);
-app.use("/api/user", userRoutes);
+app.use("/api", rateLimitMiddleware(apiLimiter));
+
+app.use("/api/auth", rateLimitMiddleware(authLimiter), authRoutes);
+
+app.use("/api/admin", rateLimitMiddleware(adminLimiter), adminRoutes);
+
+app.use("/api/paystation", rateLimitMiddleware(paymentLimiter), paystationRoutes);
+
+app.use("/api/public", rateLimitMiddleware(apiLimiter), publicRoutes);
+
+app.use("/api/user", rateLimitMiddleware(apiLimiter), userRoutes);
+
+app.get("/debug-ip", (req, res) => {
+  res.json({
+    ip: req.ip,
+    ips: req.ips,
+    headers: {
+      "x-forwarded-for": req.headers["x-forwarded-for"],
+      "cf-connecting-ip": req.headers["cf-connecting-ip"]
+    }
+  });
+});
+
 
 // ============================================================================
 // 404 HANDLER - Must be after all routes

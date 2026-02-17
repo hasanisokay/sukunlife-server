@@ -2,15 +2,11 @@ import express from "express";
 import dbConnect from "../config/db.mjs";
 import userCheckerMiddleware from "../middlewares/userCheckerMiddleware.js";
 import dotenv from "dotenv";
-import convertDateToDateObject, { convertISODateToDateObject } from "../utils/convertDateToDateObject.mjs";
+import { convertISODateToDateObject } from "../utils/convertDateToDateObject.mjs";
 import { ObjectId } from "mongodb";
-import nodemailer from "nodemailer";
-import sendOrderEmailToAdmin from "../utils/sendOrderEmailToAdmin.mjs";
-import sendOrderEmailToUser from "../utils/sendOrderEmailToUser.mjs";
-import sendAdminBookingConfirmationEmail from "../utils/sendAdminBookingConfirmationEmail.mjs";
-import sendUserBookingConfirmationEmail from "../utils/sendUserBookingConfirmationEmail.mjs";
 import fs from "fs";
 import path from "path";
+import { addEmailJob } from "../queues/emailQueue.mjs";
 
 const router = express.Router();
 const db = await dbConnect();
@@ -25,16 +21,6 @@ const orderCollection = db?.collection("orders");
 const resourceCollection = db?.collection("resources");
 const scheduleCollection = db?.collection("schedules");
 const appointmentReviewCollection = db?.collection("appointment-reviews");
-
-let transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: Number(process.env.EMAIL_SERVICE_HOST),
-  secure: false, // true for 465, false for 587
-  auth: {
-    user: process.env.EMAIL_ID,
-    pass: process.env.EMAIL_PASS,
-  },
-});
 
 router.get("/blog/:blogUrl", userCheckerMiddleware, async (req, res) => {
   try {
@@ -516,16 +502,17 @@ router.post("/book-appointment", async (req, res) => {
 
     // Step 4: Proceed with booking creation
     const modifiedBookingData = trimmedBookingData;
-    modifiedBookingData.bookedDate = convertISODateToDateObject(bookingData.date);
+    modifiedBookingData.bookedDate = convertISODateToDateObject(
+      bookingData.date,
+    );
     modifiedBookingData.bookingDate = new Date();
 
     const result = await appointmentCollection.insertOne(modifiedBookingData);
 
     if (result?.insertedId) {
-      // Send confirmation emails (don't wait for them)
       Promise.all([
-        sendAdminBookingConfirmationEmail(trimmedBookingData, transporter),
-        sendUserBookingConfirmationEmail(trimmedBookingData, transporter),
+        await addEmailJob("admin-booking-confirmation", trimmedBookingData),
+        await addEmailJob("user-booking-confirmation", trimmedBookingData),
       ]).catch((err) => {
         console.error("Email error:", err);
       });
@@ -557,55 +544,51 @@ router.post("/book-appointment", async (req, res) => {
   }
 });
 
-
 // ============================================
 // Get all appointment slots
 // ============================================
 
-router.get(
-  "/available-appointment-slots",
-  async (req, res) => {
-    try {
-      const { date, consultant, startDate, endDate } = req.query;
-      
-      // Build filter query
-      const filter = {};
-      
-      if (date) {
-        filter.date = date;
-      }
-      
-      if (startDate || endDate) {
-        filter.dateObject = {};
-        if (startDate) filter.dateObject.$gte = new Date(startDate);
-        if (endDate) filter.dateObject.$lte = new Date(endDate);
-      }
-      
-      if (consultant) {
-        filter.consultants = consultant;
-      }
+router.get("/available-appointment-slots", async (req, res) => {
+  try {
+    const { date, consultant, startDate, endDate } = req.query;
 
-      const slots = await scheduleCollection
-        .find(filter)
-        .sort({ dateObject: 1, startTime: 1 })
-        .toArray();
+    // Build filter query
+    const filter = {};
 
-      return res.status(200).json({
-        message: "Appointment slots retrieved successfully",
-        status: 200,
-        count: slots.length,
-        slots: slots
-      });
-    } catch (error) {
-      console.error("Error fetching appointment slots:", error);
-      return res.status(500).json({
-        message: "Server error",
-        error: error.message,
-        status: 500
-      });
+    if (date) {
+      filter.date = date;
     }
+
+    if (startDate || endDate) {
+      filter.dateObject = {};
+      if (startDate) filter.dateObject.$gte = new Date(startDate);
+      if (endDate) filter.dateObject.$lte = new Date(endDate);
+    }
+
+    if (consultant) {
+      filter.consultants = consultant;
+    }
+
+    const slots = await scheduleCollection
+      .find(filter)
+      .sort({ dateObject: 1, startTime: 1 })
+      .toArray();
+
+    return res.status(200).json({
+      message: "Appointment slots retrieved successfully",
+      status: 200,
+      count: slots.length,
+      slots: slots,
+    });
+  } catch (error) {
+    console.error("Error fetching appointment slots:", error);
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+      status: 500,
+    });
   }
-);
+});
 
 router.get("/course/:id", async (req, res) => {
   try {
@@ -644,7 +627,7 @@ router.get("/course/:id", async (req, res) => {
             else: 0,
           },
         },
-        modules: 1
+        modules: 1,
       },
     });
 
@@ -665,8 +648,6 @@ router.get("/course/:id", async (req, res) => {
     });
   }
 });
-
-
 
 router.get("/courses", async (req, res) => {
   try {
@@ -757,35 +738,35 @@ router.get("/courses", async (req, res) => {
   }
 });
 
-router.get(
-  "/course/stream-url/:courseId/:videoId",
-  async (req, res) => {
-    const { courseId, videoId } = req.params;
-    const course = await courseCollection.findOne({
-      courseId,
-    });
+router.get("/course/stream-url/:courseId/:videoId", async (req, res) => {
+  const { courseId, videoId } = req.params;
+  const course = await courseCollection.findOne({
+    courseId,
+  });
 
-    if (!course) return res.status(404).json({ error: "Course not found" });
+  if (!course) return res.status(404).json({ error: "Course not found" });
 
-    let videoItem = null;
-    for (const module of course.modules) {
-      for (const item of module.items) {
-        if (item.type === "video"&& item.status==='public' && item.url.filename === videoId) {
-          videoItem = item;
-          break;
-        }
+  let videoItem = null;
+  for (const module of course.modules) {
+    for (const item of module.items) {
+      if (
+        item.type === "video" &&
+        item.status === "public" &&
+        item.url.filename === videoId
+      ) {
+        videoItem = item;
+        break;
       }
-      if (videoItem) break;
     }
+    if (videoItem) break;
+  }
 
-    if (!videoItem) return res.status(404).json({ error: "Video not found" });
+  if (!videoItem) return res.status(404).json({ error: "Video not found" });
 
-      return res.json({
-        url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/master.m3u8`,
-      });
-
-  },
-);
+  return res.json({
+    url: `${process.env.SERVER_URL}/api/user/course/stream/${courseId}/${videoId}/master.m3u8`,
+  });
+});
 // shops
 //get all the product categories
 router.get("/all-product-categories", async (req, res) => {
@@ -1057,9 +1038,11 @@ router.post("/place-order", async (req, res) => {
     const result = await orderCollection.insertOne(data);
 
     if (result?.insertedId) {
-      await sendOrderEmailToAdmin(data, transporter);
+      //send order
+      // await sendOrderEmailToAdmin(data, transporter);
       if (data.email) {
-        await sendOrderEmailToUser(data, data?.email, transporter);
+        //send order email to user
+        // await sendOrderEmailToUser(data, data?.email, transporter);
       }
       return res.status(200).json({
         message: "Order placed successfully.",
@@ -1489,44 +1472,38 @@ router.get("/top-reviews", async (req, res) => {
 });
 
 // courses public video routes
-router.get(
-  "/course/public/stream/:videoId/:file",
-  async (req, res) => {
-    try {
-      const { videoId, file } = req.params;
-      if (file.includes("..")) {
-        return res.status(400).json({ error: "Invalid file" });
-      }
-
-      const baseDir = path.join(
-        "/data/uploads/private/videos",
-        videoId
-      );
-
-      const filePath = path.join(baseDir, file);
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: "Not found" });
-      }
-
-      // set correct content type
-      if (file.endsWith(".m3u8")) {
-        res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-      } else if (file.endsWith(".ts")) {
-        res.setHeader("Content-Type", "video/mp2t");
-      } else {
-        return res.status(403).json({ error: "Forbidden file type" });
-      }
-
-      res.setHeader("Cache-Control", "no-store");
-      res.setHeader("X-Content-Type-Options", "nosniff");
-
-      fs.createReadStream(filePath).pipe(res);
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Stream error" });
+router.get("/course/public/stream/:videoId/:file", async (req, res) => {
+  try {
+    const { videoId, file } = req.params;
+    if (file.includes("..")) {
+      return res.status(400).json({ error: "Invalid file" });
     }
+
+    const baseDir = path.join("/data/uploads/private/videos", videoId);
+
+    const filePath = path.join(baseDir, file);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Not found" });
+    }
+
+    // set correct content type
+    if (file.endsWith(".m3u8")) {
+      res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    } else if (file.endsWith(".ts")) {
+      res.setHeader("Content-Type", "video/mp2t");
+    } else {
+      return res.status(403).json({ error: "Forbidden file type" });
+    }
+
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Stream error" });
   }
-);
+});
 
 export default router;

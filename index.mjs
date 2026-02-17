@@ -1,6 +1,6 @@
 import app from "./src/app.js";
 import { closeConnection } from "./src/config/db.mjs";
-
+import { shutdownWorkers } from "./src/workers/index.mjs";
 
 const PORT = process.env.PORT || 5000;
 
@@ -28,8 +28,14 @@ const gracefulShutdown = async (signal) => {
     console.log('✓ HTTP server closed (no new connections accepted)');
     
     try {
+      // Close workers
+      await shutdownWorkers();
+      console.log('✓ Workers closed');
+      
       // Close MongoDB connection
       await closeConnection();
+      console.log('✓ MongoDB closed');
+      
       console.log('✓ Graceful shutdown completed successfully');
       process.exit(0);
     } catch (error) {
@@ -69,7 +75,6 @@ process.on('unhandledRejection', (reason, promise) => {
   gracefulShutdown('UNHANDLED_REJECTION');
 });
 
-// Handle warnings (optional - useful for debugging)
 process.on('warning', (warning) => {
   console.warn('⚠ Warning:', warning.name);
   console.warn('Message:', warning.message);
