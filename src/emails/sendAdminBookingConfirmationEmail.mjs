@@ -217,8 +217,8 @@ style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24
   // Define email option
   let mailOptions = {
     from: '"SukunLife" <no-reply@sukunlife.com>',
-    // to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
-    to: "devhasanvibes@gmail.com",
+    to: "sukunlifebd@gmail.com, sukunlifebd2@gmail.com",
+    // to: "devhasanvibes@gmail.com",
     subject: "New Appointment - SukunLife",
     html: generateEmailHTML(bookingData),
   };
