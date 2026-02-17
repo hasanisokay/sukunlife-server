@@ -23,6 +23,5 @@ jobs:
             cd ${{ secrets.SERVER_PATH }}
             git pull origin main
             npm ci --omit=dev
-            pm2 delete sukunlife-server || true
-            pm2 start ecosystem.config.cjs --env production
+            pm2 start ecosystem.config.cjs --only sukunlife-server --env production --update-env
             pm2 save

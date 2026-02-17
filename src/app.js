@@ -284,16 +284,16 @@ app.use("/api/public", rateLimitMiddleware(apiLimiter), publicRoutes);
 
 app.use("/api/user", rateLimitMiddleware(apiLimiter), userRoutes);
 
-app.get("/debug-ip", (req, res) => {
-  res.json({
-    ip: req.ip,
-    ips: req.ips,
-    headers: {
-      "x-forwarded-for": req.headers["x-forwarded-for"],
-      "cf-connecting-ip": req.headers["cf-connecting-ip"]
-    }
-  });
-});
+// app.get("/debug-ip", (req, res) => {
+//   res.json({
+//     ip: req.ip,
+//     ips: req.ips,
+//     headers: {
+//       "x-forwarded-for": req.headers["x-forwarded-for"],
+//       "cf-connecting-ip": req.headers["cf-connecting-ip"]
+//     }
+//   });
+// });
 
 
 // ============================================================================
