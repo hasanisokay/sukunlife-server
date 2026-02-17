@@ -3,7 +3,6 @@ module.exports = {
     {
       name: "sukunlife-server",
       script: "./index.mjs",
-      //  instances: 'max',
       instances: 1,
       exec_mode: "cluster",
 
