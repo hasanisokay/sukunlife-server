@@ -3,10 +3,8 @@ module.exports = {
     {
       name: "sukunlife-server",
       script: "./index.mjs",
-      // instances: 1,
-      // exec_mode: "cluster",
       instances: 1,
-exec_mode: "fork",
+      exec_mode: "fork",
 
       // Environment variables
       env_production: {
